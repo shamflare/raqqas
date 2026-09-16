@@ -192,14 +192,41 @@ class AuthTests(BaseAPITest):
     def test_register_and_login(self):
         response = self.guest.post("/api/v1/auth/register", {
             "name": "زائر جديد", "phone": "0997000111", "password": "strongpass1",
+            "whatsapp_number": "0997000111",
         }, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertIn("access", response.data["tokens"])
         self.assertEqual(response.data["user"]["phone"], "+963997000111")
 
+    def test_whatsapp_number_is_required(self):
+        """عليه يصل رمز استعادة كلمة المرور — فلا حساب بلا قناة استعادة."""
+        response = self.guest.post("/api/v1/auth/register", {
+            "name": "بلا واتساب", "phone": "0997000222", "password": "strongpass1",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("whatsapp_number", response.data["error"]["fields"])
+
+    def test_whatsapp_may_differ_from_account_number(self):
+        """واتسابه على رقم آخر — حالة حقيقية، ولهذا الحقلان منفصلان."""
+        response = self.guest.post("/api/v1/auth/register", {
+            "name": "رقمان", "phone": "0997000333", "password": "strongpass1",
+            "whatsapp_number": "+905551234567",
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["user"]["whatsapp_number"], "+905551234567")
+
+    def test_foreign_number_can_register(self):
+        """سوريّ في ألمانيا — كان مرفوضًا قبل plan3."""
+        response = self.guest.post("/api/v1/auth/register", {
+            "name": "مغترب", "phone": "+4915123456789", "password": "strongpass1",
+            "whatsapp_number": "+4915123456789",
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+
     def test_duplicate_phone_is_refused(self):
         response = self.guest.post("/api/v1/auth/register", {
             "name": "مكرّر", "phone": "0994123456", "password": "strongpass1",
+            "whatsapp_number": "0994123456",
         }, format="json")
         self.assertEqual(response.status_code, 400)
 

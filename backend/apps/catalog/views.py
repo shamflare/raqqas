@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from apps.core.permissions import IsStaffRole
 
 from .models import Category, City, Neighborhood
+from .queries import CATEGORY_ORDER, category_tree_queryset
 from .serializers import (
     CategorySerializer,
     CategoryWriteSerializer,
@@ -19,8 +20,6 @@ from .serializers import (
     NeighborhoodSerializer,
     NeighborhoodWriteSerializer,
 )
-
-PUBLISHED = Q(listings__status="published")
 
 
 @extend_schema(summary="الأقسام مع أقسامها الفرعية وعدد الإعلانات")
@@ -31,15 +30,7 @@ def category_tree(request):
     رد واحد يكفي شاشتَي «الرئيسية» و«الأقسام» معًا.
     التطبيق يخزّنه محليًا ويعيد استخدامه بلا إنترنت.
     """
-    children = Category.objects.active().annotate(
-        listings_count=Count("listings", filter=PUBLISHED)
-    )
-    roots = (
-        Category.objects.active()
-        .roots()
-        .annotate(listings_count=Count("listings", filter=PUBLISHED))
-        .prefetch_related(Prefetch("children", queryset=children))
-    )
+    roots = category_tree_queryset()
     return Response(CategorySerializer(roots, many=True, context={"request": request}).data)
 
 
@@ -82,7 +73,7 @@ class AdminCategoryViewSet(viewsets.ModelViewSet):
                 listings_count=Count("listings", filter=~Q(listings__status="deleted")),
                 children_count=Count("children", distinct=True),
             )
-            .order_by("sort_order", "name_ar")
+            .order_by(*CATEGORY_ORDER)
         )
 
     def perform_destroy(self, instance):

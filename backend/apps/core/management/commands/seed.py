@@ -261,7 +261,7 @@ class Command(BaseCommand):
         """يعيد الرقة تحديدًا — لا آخر محافظة في القائمة — لأنها مدينة العروض التجريبية."""
         cities = {}
         for row in CITIES:
-            city, created = City.objects.update_or_create(
+            city, created = City.objects.get_or_create(
                 slug=row["slug"],
                 defaults={
                     "name_ar": row["ar"], "name_tr": row["tr"], "name_en": row["en"],
@@ -274,7 +274,7 @@ class Command(BaseCommand):
 
     def _seed_neighborhoods(self, city: City):
         for order, (slug, ar, tr, en) in enumerate(NEIGHBORHOODS, start=1):
-            Neighborhood.objects.update_or_create(
+            Neighborhood.objects.get_or_create(
                 city=city, slug=slug,
                 defaults={"name_ar": ar, "name_tr": tr, "name_en": en,
                           "sort_order": order, "is_active": True},
@@ -282,9 +282,26 @@ class Command(BaseCommand):
         self.stdout.write(f"  ✓ {len(NEIGHBORHOODS)} حيًّا")
 
     def _seed_categories(self):
+        """
+        ينشئ الناقص فقط — **ولا يلمس قسمًا موجودًا**.
+
+        ⚠️ كان هنا `update_or_create`، و`03-deploy.sh` ينادي `seed` مع **كل
+        تحديث للخادم**. فكان كل تحديث يمحو عمل الأدمن كاملًا: الترتيب الذي
+        رتّبه، والأسماء التي كتبها بثلاث لغات، والأيقونات التي اختارها —
+        بل ويعيد إظهار أقسام أخفاها عمدًا.
+
+        وهذا نصف السبب في أن «ترتيب الأقسام لا يظهر»: النصف الأول أن الـAPI
+        كان يرمي الترتيب (`catalog/queries.py`)، والنصف الثاني أن قاعدة
+        البيانات نفسها كانت تفقده عند كل نشر.
+
+        القاعدة الآن: **البيانات المرجعية بذرةٌ أولى لا مصدر حقيقة.** ما يكتبه
+        الأدمن يفوز دائمًا. وثمنها أن تعديل اسم افتراضي هنا لا يصل الخوادم
+        القائمة — وهو ثمن زهيد مقابل ألّا يُمحى عمل بشري.
+        """
         subs_total = 0
+        created_total = 0
         for order, row in enumerate(CATEGORIES, start=1):
-            parent, _ = Category.objects.update_or_create(
+            parent, created = Category.objects.get_or_create(
                 slug=row["slug"],
                 defaults={
                     "name_ar": row["ar"], "name_tr": row["tr"], "name_en": row["en"],
@@ -292,8 +309,9 @@ class Command(BaseCommand):
                     "is_active": True, "parent": None,
                 },
             )
+            created_total += created
             for sub_order, (slug, ar, tr, en) in enumerate(row["subs"], start=1):
-                Category.objects.update_or_create(
+                _, sub_created = Category.objects.get_or_create(
                     slug=slug,
                     defaults={
                         "name_ar": ar, "name_tr": tr, "name_en": en,
@@ -301,12 +319,16 @@ class Command(BaseCommand):
                         "icon": "", "is_active": True,
                     },
                 )
+                created_total += sub_created
                 subs_total += 1
-        self.stdout.write(f"  ✓ {len(CATEGORIES)} قسمًا رئيسيًا و {subs_total} قسمًا فرعيًا")
+        self.stdout.write(
+            f"  ✓ {len(CATEGORIES)} قسمًا رئيسيًا و {subs_total} قسمًا فرعيًا "
+            f"({created_total} أُنشئ الآن، والباقي كما تركه الأدمن)"
+        )
 
     def _seed_rejection_reasons(self):
         for order, (ar, tr, en) in enumerate(REJECTION_REASONS, start=1):
-            RejectionReason.objects.update_or_create(
+            RejectionReason.objects.get_or_create(
                 name_ar=ar,
                 defaults={"name_tr": tr, "name_en": en, "sort_order": order, "is_active": True},
             )

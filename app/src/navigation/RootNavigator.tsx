@@ -17,6 +17,7 @@ import { DeleteAccountScreen } from '../screens/DeleteAccountScreen';
 import { EditListingScreen } from '../screens/EditListingScreen';
 import { EditProfileScreen } from '../screens/EditProfileScreen';
 import { FavoritesScreen } from '../screens/FavoritesScreen';
+import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { ListingScreen } from '../screens/ListingScreen';
 import { MyListingsScreen } from '../screens/MyListingsScreen';
@@ -130,6 +131,11 @@ export function RootNavigator() {
         <Stack.Screen
           name="Auth"
           component={AuthScreen}
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
       </Stack.Navigator>

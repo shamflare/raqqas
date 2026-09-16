@@ -6,6 +6,13 @@ import { api, ApiError } from '../api/client';
 import { KeyboardScroll } from '../components/KeyboardScroll';
 import { Field, Input } from '../components/Field';
 import { SubHeader } from '../components/Header';
+import {
+  PhoneInput,
+  fromE164,
+  looksComplete,
+  toE164,
+  type PhoneValue,
+} from '../components/PhoneInput';
 import { useToast } from '../components/Toast';
 import { Button, Notice, Txt } from '../components/ui';
 import { useI18n } from '../i18n';
@@ -22,7 +29,10 @@ export function EditProfileScreen({ navigation }: Props) {
   const toast = useToast();
 
   const [name, setName] = useState(user?.name ?? '');
-  const [whatsapp, setWhatsapp] = useState(user?.whatsapp_number ?? '');
+  const [whatsapp, setWhatsapp] = useState<PhoneValue>(() =>
+    // الرقم المحفوظ دوليّ — نفكّكه إلى دولة ورقم محلي ليرى المستخدم علمه
+    fromE164(user?.whatsapp_number || user?.phone),
+  );
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,7 +42,7 @@ export function EditProfileScreen({ navigation }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await updateProfile({ name: name.trim(), whatsapp_number: whatsapp.trim() });
+      await updateProfile({ name: name.trim(), whatsapp_number: toE164(whatsapp) });
       toast.show(text.account.saved);
       navigation.goBack();
     } catch (caught) {
@@ -80,13 +90,25 @@ export function EditProfileScreen({ navigation }: Props) {
 
         <Field
           label={text.account.whatsappNumber}
-          hint={text.account.whatsappHint}
+          required
+          hint={text.auth.whatsappRequiredHint}
           error={error?.fieldError('whatsapp_number')}
         >
-          <Input value={whatsapp} onChangeText={setWhatsapp} keyboardType="phone-pad" ltr />
+          <PhoneInput
+            value={whatsapp}
+            onChange={setWhatsapp}
+            invalid={Boolean(error?.fieldError('whatsapp_number'))}
+          />
         </Field>
 
-        <Button title={text.common.save} block loading={busy} onPress={saveProfile} />
+        <Button
+          title={text.common.save}
+          block
+          loading={busy}
+          // الحقل إجباري الآن: حفظه فارغًا يقطع قناة استعادة كلمة المرور
+          disabled={!looksComplete(whatsapp) || name.trim().length < 2}
+          onPress={saveProfile}
+        />
 
         <View style={{ height: 1, backgroundColor: t.colors.line, marginVertical: 26 }} />
 

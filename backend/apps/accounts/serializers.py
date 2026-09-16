@@ -9,6 +9,14 @@ from .utils import normalize_phone
 
 
 class PhoneField(serializers.CharField):
+    """
+    يقبل الرقم بأي صيغة ويخزّنه E.164.
+
+    التطبيق يرسله دوليًّا كاملًا بعد أن يختار المستخدم دولته، لكن لوحة الإدارة
+    وصفحة حذف الحساب على الويب ما زالت تقبل `0994…` عاريًا — فيبقى الافتراض
+    السوري عاملًا لمن لم يختر دولة.
+    """
+
     def to_internal_value(self, data):
         value = super().to_internal_value(data)
         try:
@@ -66,7 +74,9 @@ class PublicSellerSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     phone = PhoneField()
-    whatsapp_number = PhoneField(required=False, allow_blank=True)
+    # إجباري الآن: عليه يصل رمز استعادة كلمة المرور. التطبيق يهيّئه مسبقًا
+    # برقم الحساب لأن ذلك هو الغالب، فلا يزيد على المستخدم ضغطة.
+    whatsapp_number = PhoneField()
     password = serializers.CharField(write_only=True, min_length=6, style={"input_type": "password"})
 
     class Meta:
@@ -135,6 +145,45 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate_new_password(self, value):
         try:
             validate_password(value, self.context["request"].user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
+
+
+# ------------------------------------------------------- استعادة كلمة المرور
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    """الخطوة ①: الرقم وحده."""
+
+    phone = PhoneField()
+
+
+class VerifyResetCodeSerializer(serializers.Serializer):
+    """الخطوة ②: الرقم والرمز."""
+
+    phone = PhoneField()
+    code = serializers.CharField(min_length=4, max_length=8, trim_whitespace=True)
+
+    def validate_code(self, value):
+        # المستخدم ينسخ الرمز من واتساب فيلتصق معه فراغ أو محرف اتجاه
+        return "".join(ch for ch in value if ch.isdigit())
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    """
+    الخطوة ③: التذكرة وكلمة المرور الجديدة.
+
+    التذكرة لا الرمز: الرمز استُهلك في الخطوة ② فلا يصحّ التحقق منه ثانيةً،
+    ولا نريده يسافر في طلب ثالث.
+    """
+
+    ticket = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, min_length=6)
+
+    def validate_new_password(self, value):
+        try:
+            validate_password(value)
         except DjangoValidationError as exc:
             raise serializers.ValidationError(list(exc.messages))
         return value

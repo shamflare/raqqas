@@ -61,9 +61,24 @@ sudo -u souq "$VENV/bin/pip" install gunicorn -q
 
 # ---------------------------------------------------------------- قاعدة البيانات
 
+# مخزن مؤقّت مشترك بين العمّال الثلاثة.
+#
+# الافتراضي `LocMemCache` ذاكرة داخل العملية الواحدة، ومع `--workers 3` يصير
+# لكل عامل نسخته: عدّاد حدّ المعدّل يُقسَّم ثلاثًا فيصير الحدّ الفعلي ثلاثة
+# أضعاف المكتوب، وإعدادات اللوحة تصل عاملًا ولا تصل الآخرين. جدول في قاعدة
+# البيانات يكفي هنا — لا داعي لـRedis على خادم بهذا الحجم.
+if ! grep -q '^CACHE_BACKEND=' "$APP_ENV"; then
+  echo "▶ تفعيل المخزن المؤقّت المشترك…"
+  cat >> "$APP_ENV" <<'CACHE'
+CACHE_BACKEND=django.core.cache.backends.db.DatabaseCache
+CACHE_LOCATION=souq_cache
+CACHE
+fi
+
 echo "▶ الترحيلات…"
 cd "$BACKEND"
 sudo -u souq "$VENV/bin/python" manage.py migrate --noinput
+sudo -u souq "$VENV/bin/python" manage.py createcachetable
 
 echo "▶ الملفات الثابتة…"
 sudo -u souq STATIC_ROOT="$APP_DIR/static" "$VENV/bin/python" manage.py collectstatic --noinput -v 0

@@ -9,7 +9,7 @@
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, F, Prefetch, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -18,12 +18,12 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 
 from apps.accounts.models import Block
 from apps.core.images import process_upload
 from apps.core.models import AdminLog, AppConfig
 from apps.core.pagination import DefaultPagination
+from apps.core.throttling import FixedScopeThrottle
 
 from .filters import SORTS, ListingFilter
 from .models import Favorite, Listing, ListingMedia, RejectionReason, Report
@@ -41,15 +41,15 @@ from .serializers import (
 )
 
 
-class WriteThrottle(ScopedRateThrottle):
+class WriteThrottle(FixedScopeThrottle):
     scope = "write"
 
 
-class ContactThrottle(ScopedRateThrottle):
+class ContactThrottle(FixedScopeThrottle):
     scope = "contact"
 
 
-class ReportThrottle(ScopedRateThrottle):
+class ReportThrottle(FixedScopeThrottle):
     scope = "report"
 
 
@@ -459,18 +459,10 @@ def home_summary(request):
     رد واحد للشاشة الأولى: أقسام + مميّزة + أحدث.
     طلب واحد بدل ثلاثة — فرق محسوس على إنترنت ضعيف.
     """
-    from apps.catalog.models import Category
+    from apps.catalog.queries import category_tree_queryset
     from apps.catalog.serializers import CategorySerializer
 
-    published = Q(listings__status="published")
-    children = Category.objects.active().annotate(
-        listings_count=Count("listings", filter=published)
-    )
-    roots = (
-        Category.objects.active().roots()
-        .annotate(listings_count=Count("listings", filter=published))
-        .prefetch_related(Prefetch("children", queryset=children))
-    )
+    roots = category_tree_queryset()
 
     base = Listing.objects.published().with_relations()
     blocked = Block.blocked_ids_for(request.user)

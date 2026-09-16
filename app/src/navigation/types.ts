@@ -1,3 +1,4 @@
+import type { PhoneValue } from '../components/PhoneInput';
 import type { AuthReason } from '../state/AuthContext';
 
 export type RootStackParamList = {
@@ -9,6 +10,7 @@ export type RootStackParamList = {
   Add: undefined;
   EditListing: { id: number };
   Auth: { reason?: AuthReason } | undefined;
+  ForgotPassword: { phone?: PhoneValue } | undefined;
   MyListings: undefined;
   Notifications: undefined;
   EditProfile: undefined;

@@ -26,6 +26,7 @@ ssh -i ~/.ssh/souq_raqqa souq@46.224.188.126     # لتشغيل التطبيق
 | `fail2ban` | حظر من يحاول تخمين الدخول |
 | `ufw` | جدار ناري — المنافذ 22 · 80 · 443 فقط |
 | `souq-backup.timer` | نسخة احتياطية يوميًا 3:30 فجرًا |
+| `souq-wa.service` | خدمة واتساب — على 127.0.0.1:8787، لا منفذ مكشوف (`WHATSAPP.md`) |
 
 ## المسارات
 
@@ -66,6 +67,9 @@ Git بالخطأ.
 | `08-android-toolchain.sh` | Java 17 · Node 22 · Android SDK — لبناء APK على الخادم |
 | `09-build-apk.sh` | مفتاح التوقيع · prebuild · بناء موقّع · نشر وتسجيل النسخة |
 | `10-web.sh` | بناء Next.js + خدمة `souq-web` + ربطها بـ nginx |
+| `11-publish-update.sh` | دفع تحديث فوري (OTA) إلى التطبيقات المثبَّتة |
+| `12-build-aab.sh` · `13-play-upload.sh` · `14-release.sh` | خطّ الإصدار إلى Google Play |
+| `15-wa-bot.sh` | خدمة واتساب لإرسال رموز استعادة كلمة المرور — **اقرأ `WHATSAPP.md` أولًا** |
 
 ## تحديث الكود بعد أي تعديل
 

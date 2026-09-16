@@ -30,6 +30,13 @@ type AuthValue = {
   register: (payload: RegisterPayload) => Promise<User>;
   logout: () => Promise<void>;
   updateProfile: (patch: Partial<Pick<User, 'name' | 'whatsapp_number' | 'language'>>) => Promise<User>;
+  /**
+   * يتبنّى جلسة صكّها الخادم خارج login/register — استعادة كلمة المرور.
+   *
+   * لا نعيد المستخدم إلى شاشة الدخول بعد أن أثبت ملكيته لرقمه قبل ثوانٍ
+   * وكتب كلمة مروره الجديدة: الخادم أعطانا رموزًا، فنستعملها.
+   */
+  adoptSession: (user: User, tokens: Tokens) => Promise<void>;
 
   /**
    * بوابة تسجيل الدخول.
@@ -132,6 +139,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [persist, runPendingAction],
   );
 
+  const adoptSession = useCallback(
+    async (nextUser: User, tokens: Tokens) => {
+      await persist(nextUser, tokens);
+      runPendingAction();
+    },
+    [persist, runPendingAction],
+  );
+
   const logout = useCallback(async () => {
     try {
       await api.post('/auth/logout', {});
@@ -179,11 +194,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       register,
       logout,
       updateProfile,
+      adoptSession,
       requireAuth,
       onAuthRequested,
       pendingReason,
     }),
-    [user, ready, login, register, logout, updateProfile, requireAuth, onAuthRequested, pendingReason],
+    [user, ready, login, register, logout, updateProfile, adoptSession, requireAuth,
+     onAuthRequested, pendingReason],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

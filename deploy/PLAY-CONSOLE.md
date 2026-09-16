@@ -3,7 +3,7 @@
 > **الغرض:** كل نموذج في الكونسول وإجابته الحرفية. لا تخمّن — إجابة خاطئة في
 > «أمان البيانات» تناقض سياسة الخصوصية المنشورة، والتناقض سبب رفض متكرّر.
 >
-> **آخر تحديث:** 2026-08-19 · مبنيّ على ما يجمعه الكود فعلًا لا على تقدير.
+> **آخر تحديث:** 2026-09-05 · مبنيّ على ما يجمعه الكود فعلًا لا على تقدير.
 
 ---
 
@@ -224,7 +224,131 @@ adb exec-out screencap -p > shot-1.png
 
 ---
 
-## 6. حين يصل بريد رفض
+## 6. طلب الوصول إلى الإنتاج (Apply for production)
+
+> يظهر هذا النموذج بعد اجتياز شرط الاختبار المغلق: **12 مختبِرًا مشتركين
+> فعليًا لمدة 14 يومًا متصلة**. أُرسِل **2026-09-05 · 20:01** بالإجابات التالية
+> حرفيًا — احفظها، فإن رُفض الطلب ستحتاج مقارنة ما كتبتَه بما يعترض عليه غوغل.
+
+**قاعدة تحكم النموذج كلّه:** المراجع يقارن إجاباتك بسجلّ إصداراتك وبإقراراتك
+في `App content` و`Data safety`. تعديلٌ تدّعيه ولا أثر له في السجلّ، أو «لا
+إعلانات» هنا مع إقرار بإعلانات هناك — كلاهما سبب رفض. اكتب الواقع.
+
+### 6.1 About your closed test
+
+**How did you recruit users for your closed test?** (300)
+```
+I recruited testers personally from my own network: friends, family and acquaintances from the community my app serves, both locally and abroad. I contacted each one individually on WhatsApp and sent them the closed-test opt-in link. No paid testing provider was used.
+```
+
+> لا تذكر أسماء الدول. لا تضيف شيئًا للإجابة، وجوهرها «شبكة شخصية بلا مزوّد
+> مدفوع». وبلد **حساب المطوّر** (تركيا) هو ما يهمّ غوغل، لا بلدان المختبِرين.
+
+**How easy was it to recruit testers?** → **Difficult**
+
+> الواقع: دُعي 11 فقبِل 5 في البداية. «Easy» تناقض ما جرى ولا تكافئ عليها.
+
+**Describe the engagement you received from testers** (300)
+```
+Testers signed up with a phone number, browsed listings by category, used search, saved favorites, and posted their own listings with photos. This matched real use, though most opened the app a few times rather than daily, as they had no real goods to sell.
+```
+
+> الشطر الأخير مقصود: النموذج يسأل صراحةً عن **الفرق** عن المستخدم الحقيقي.
+> الاعتراف به يجعل الإجابة مصدَّقة.
+
+**Provide a summary of the feedback that you received** (300)
+```
+I collected feedback informally: I messaged each tester on WhatsApp and gave a feedback email on the test page. No crashes or blocking bugs were reported and no one asked for changes, so no fixes were needed during the test. Testers said the app worked as they expected.
+```
+
+### 6.2 About your app
+
+**Who is the intended audience of your app?** (300)
+```
+Adults aged 18 and over in Raqqa and nearby areas who want to buy and sell used and new goods locally, plus people from the same community living abroad who follow the local market. The app is in Arabic, is not directed to children and has no content aimed at minors.
+```
+
+> الجملة الأخيرة تطابق إقرار **Target audience** في §3.2 (18+ · غير موجّه
+> للأطفال). لا تحذفها.
+
+**Describe how your app provides value to users** (300)
+```
+A free local classifieds app. Users post items with photos, browse by category, search, save favorites, and contact the seller by phone or WhatsApp. There are no fees, no commission and no ads. Every listing is reviewed by a person before it appears, and users can report or block.
+```
+
+> `no ads` و`no fees, no commission` يطابقان إجابتَي «لا» في أول سؤالين من هذا
+> الملف. وذكر المراجعة البشرية والإبلاغ والحظر يسبق سؤال المراجع عن UGC.
+
+**How many installs do you expect in your first year?** → **0 – 10K**
+
+> سوق مدينة واحدة. الرقم الأعلى يستدعي تدقيقًا أشدّ بلا مقابل.
+
+### 6.3 Your production readiness
+
+**What changes did you make based on your closed test?** (300)
+```
+No changes were needed. The closed test produced no crash reports, no bug reports and no change requests. Issues found in earlier testing rounds before the closed test, such as the keyboard covering input fields and a show-password option, were already fixed in this version.
+```
+
+> هذا هو السؤال الحرج. لم يُعدَّل الكود طوال الاختبار (لا commit بعد `fd4b6da`
+> في 2026-08-19)، و«لا شيء» وحدها إجابة ضعيفة. المخرج الصادق: الإصلاحات جرت
+> **قبل** الاختبار المغلق في مرحلة توزيع الـAPK — وهي في السجلّ فعلًا:
+> `5945e8c` تغطية لوحة المفاتيح · `160009e` إظهار كلمة المرور.
+
+**How did you decide that your app is ready for production?** (300)
+```
+Twelve testers used it for over 14 days with no crashes or complaints. Every Play requirement is implemented and covered by automated tests: in-app and web account deletion, privacy policy, terms, report and block, and human review of each listing. The server runs on HTTPS with daily backups.
+```
+
+> `covered by automated tests` أقوى ما في الإجابة: أكثر المتقدّمين يكتبون
+> انطباعًا، وأنت تقدّم آلية — `backend/tests/test_play_requirements.py`.
+
+### 6.4 قبل الضغط على Submit
+
+- تحقّق أن حساب المراجع في **App access** (§3.1) ما زال يعمل — قد تشمل مراجعة
+  الطلب فتح التطبيق، والمراجع لا يملك رقمًا سوريًا.
+- **لا توقف الاختبار المغلق ولا تُخرج أحدًا من قائمة المختبِرين** أثناء
+  الانتظار. هبوط العدد تحت 12 يبطل الشرط.
+- الردّ يصل على بريد الحساب خلال أيام إلى أسبوع، وحالته في **Dashboard**.
+
+---
+
+## 6.5 تغيير اسم المطوّر الظاهر تحت اسم التطبيق
+
+هذا **ليس في الكود**. لا في `app.json` ولا في الخادم ولا في لوحة الإدارة سطرٌ
+يتحكّم بالاسم الذي يظهر تحت عنوان التطبيق في نتائج البحث وصفحة المتجر. مصدره
+حساب المطوّر في Play Console، ولا يغيّره إلا صاحب الحساب بنفسه.
+
+### الخطوات
+
+```
+Play Console  ←  ⚙️ Settings  ←  Developer account  ←  Account details
+   ←  حقل Developer name  ←  Abu Shahm  ←  Save
+```
+
+الاسم الحالي `lebid hacalaye`، والمطلوب **`Abu Shahm`**.
+
+### أربع ملاحظات تمنع المفاجآت
+
+| الملاحظة | التفصيل |
+|---|---|
+| **يمرّ بمراجعة** | غوغل تراجع الاسم الجديد: ساعات إلى بضعة أيام، ثم يحتاج ~24 ساعة أخرى ليظهر في المتجر. لا شيء يتغيّر فورًا — لا تُعد المحاولة ظنًّا أن الحفظ فشل |
+| **اسم واحد للحساب كلّه** | لا لكل تطبيق، ولا يقبل الحقل نسختين بلغتين. أي تطبيق آخر على الحساب نفسه يحمل الاسم نفسه |
+| **اكتبه لاتينيًا** | `Abu Shahm` لا «أبو شهم». الحقل يرفض أحيانًا الأحرف غير اللاتينية، واللاتيني يُقرأ في كل بلد ولا يظهر مشوّهًا على أجهزة بلا خطوط عربية |
+| **الاسم القانوني قد يبقى** | في قسم «About the developer» يعرض غوغل للمستخدمين في الاتحاد الأوروبي الاسم القانوني وبيانات التواصل — إلزام قانوني (DSA) لا خيار فيه ولا علاقة له بهذا الحقل. الاسم **تحت عنوان التطبيق** هو ما سيصير `Abu Shahm` |
+
+### ما لا يتغيّر بهذا
+
+**اسم التطبيق نفسه** (`سوق الرقة`) منفصل تمامًا، ومصدره `app.json` وصفحة المتجر
+— لا تُبدّله من هنا.
+
+> ملاحظة: ما يظهر في بحث المتجر هو اسم صفحة المتجر لا اسم `app.json`. إن رأيت
+> «سوقنا» بدل «سوق الرقة» فذلك حقل **App name** في Store listing (§4)، ويُصحَّح
+> من هناك لا من حساب المطوّر.
+
+---
+
+## 7. حين يصل بريد رفض
 
 | الرسالة | السبب الغالب | العلاج |
 |---|---|---|
@@ -241,7 +365,7 @@ adb exec-out screencap -p > shot-1.png
 
 ---
 
-## 7. ملفات ذات صلة
+## 8. ملفات ذات صلة
 
 | الملف | ماذا فيه |
 |---|---|

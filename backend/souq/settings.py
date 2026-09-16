@@ -147,8 +147,10 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = IMAGE_MAX_UPLOAD_BYTES
 # ---------------------------------------------------------------- DRF
 
 REST_FRAMEWORK = {
+    # ليست JWTAuthentication المجرّدة: نسختنا تُبطل الرموز الصادرة قبل آخر
+    # تغيير لكلمة المرور، وإلا بقي السارق داخلًا تسعين يومًا بعد الاستعادة.
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.accounts.tokens.SouqJWTAuthentication",
     ),
     # القاعدة الأساسية: القراءة مفتوحة للزائر، والكتابة تحتاج تسجيلًا (plan2 §11 / قرار 17)
     "DEFAULT_PERMISSION_CLASSES": (
@@ -159,14 +161,15 @@ REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "apps.core.exceptions.api_exception_handler",
-    "DEFAULT_THROTTLE_CLASSES": (
-        "rest_framework.throttling.ScopedRateThrottle",
-    ),
+    # لا محدِّد افتراضي: كل عرض يعلن محدِّده صراحةً (apps.core.throttling).
+    # كان هنا `ScopedRateThrottle` وهي لا تحدّ شيئًا ما لم يحمل العرض
+    # `throttle_scope` — فكانت حمايةً موهومة. التفاصيل في core/throttling.py.
     "DEFAULT_THROTTLE_RATES": {
         "auth": "20/hour",          # تسجيل الدخول والتسجيل
         "contact": "60/hour",       # كشف رقم البائع
         "write": "120/hour",        # النشر والتعديل
         "report": "10/hour",        # البلاغات
+        "reset": "10/hour",         # طلب رمز استعادة — والحدّ الفعلي في الجدول
     },
 }
 
@@ -231,6 +234,23 @@ if "test" in sys.argv:
 # ---------------------------------------------------------------- الإشعارات (FCM)
 
 FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")
+
+# ---------------------------------------------------------------- واتساب (رموز الاستعادة)
+
+# bot = خدمة Node محلية (deploy/wa-bot) · cloud = Meta الرسمي · log = السجلّ فقط.
+# الافتراضي `log` عمدًا: خادم بلا إعداد يجب ألّا يدّعي أنه يرسل.
+# التفاصيل والتحذيرات في deploy/WHATSAPP.md.
+WHATSAPP_PROVIDER = os.getenv("WHATSAPP_PROVIDER", "log")
+
+# الخدمة الجانبية — على 127.0.0.1 وحدها، فلا منفذ مكشوف على الإنترنت
+WHATSAPP_BOT_URL = os.getenv("WHATSAPP_BOT_URL", "http://127.0.0.1:8787")
+WHATSAPP_BOT_TOKEN = os.getenv("WHATSAPP_BOT_TOKEN", "")
+
+# Meta WhatsApp Cloud API — جاهز للتبديل بلا تعديل كود
+WHATSAPP_CLOUD_TOKEN = os.getenv("WHATSAPP_CLOUD_TOKEN", "")
+WHATSAPP_CLOUD_PHONE_ID = os.getenv("WHATSAPP_CLOUD_PHONE_ID", "")
+WHATSAPP_CLOUD_TEMPLATE = os.getenv("WHATSAPP_CLOUD_TEMPLATE", "password_reset")
+WHATSAPP_CLOUD_TEMPLATE_LANG = os.getenv("WHATSAPP_CLOUD_TEMPLATE_LANG", "ar")
 
 # ---------------------------------------------------------------- السجلات
 

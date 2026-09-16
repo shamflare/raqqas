@@ -7,22 +7,38 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from apps.core.throttling import FixedScopeThrottle
+
+from . import recovery
 from .models import Device, User
 from .serializers import (
     ChangePasswordSerializer,
     DeviceSerializer,
+    ForgotPasswordSerializer,
     LoginSerializer,
     RegisterSerializer,
+    ResetPasswordSerializer,
     UserSerializer,
+    VerifyResetCodeSerializer,
     tokens_for,
 )
 
 
-class AuthThrottle(ScopedRateThrottle):
+class AuthThrottle(FixedScopeThrottle):
     scope = "auth"
+
+
+class ResetThrottle(FixedScopeThrottle):
+    """
+    حدّ على طلبات الاستعادة من مصدر واحد.
+
+    الحدّ الحقيقي لكل حساب في `PasswordResetCode.throttled`، وهذا يقف أمام نوع
+    آخر من العبث: من يجرّب **أرقامًا كثيرة** من مكان واحد ليعرف أيّها مسجّل.
+    """
+
+    scope = "reset"
 
 
 class RegisterView(APIView):
@@ -77,10 +93,82 @@ def change_password(request):
     serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
     serializer.is_valid(raise_exception=True)
     user = request.user
-    user.set_password(serializer.validated_data["new_password"])
-    user.save(update_fields=["password"])
-    # الرموز القديمة تبقى صالحة حتى انتهائها — نعيد رموزًا جديدة للجهاز الحالي
+    # يُخرج كل جهاز آخر، ويعيد للجهاز الحالي رموزًا جديدة. من غيّر كلمته لأنه
+    # يشكّ أن أحدًا يعرفها يجب أن يخرج ذلك الأحد فعلًا، لا بعد تسعين يومًا.
+    user.set_password_and_revoke_sessions(serializer.validated_data["new_password"])
     return Response({"ok": True, "tokens": tokens_for(user)})
+
+
+# ------------------------------------------------------ استعادة كلمة المرور
+
+
+def _recovery_error(exc: recovery.RecoveryError) -> Response:
+    return Response(
+        {"error": {"code": exc.code, "message": exc.message}},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+@extend_schema(summary="① طلب رمز استعادة كلمة المرور", request=ForgotPasswordSerializer)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([ResetThrottle])
+def forgot_password(request):
+    """
+    POST /auth/password/forgot — يرسل رمزًا إلى واتساب صاحب الحساب.
+
+    الردّ **واحد** سواء كان الرقم مسجّلًا أم لا (انظر `recovery.request_code`).
+    """
+    serializer = ForgotPasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    try:
+        result = recovery.request_code(
+            serializer.validated_data["phone"], lang=getattr(request, "lang", "ar")
+        )
+    except recovery.RecoveryError as exc:
+        return _recovery_error(exc)
+    return Response(result)
+
+
+@extend_schema(summary="② التحقّق من رمز الاستعادة", request=VerifyResetCodeSerializer)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([ResetThrottle])
+def verify_reset_code(request):
+    """POST /auth/password/verify — يعيد تذكرة قصيرة العمر تُستعمل في الخطوة ③."""
+    serializer = VerifyResetCodeSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    try:
+        result = recovery.verify_code(
+            serializer.validated_data["phone"], serializer.validated_data["code"]
+        )
+    except recovery.RecoveryError as exc:
+        return _recovery_error(exc)
+    return Response(result)
+
+
+@extend_schema(summary="③ تعيين كلمة مرور جديدة", request=ResetPasswordSerializer)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([ResetThrottle])
+def reset_password(request):
+    """
+    POST /auth/password/reset — يبدّل الكلمة ويُدخل المستخدم مباشرة.
+
+    الدخول الفوري مقصود: من وصل إلى هنا أثبت ملكيته للرقم قبل قليل، وإعادته
+    إلى شاشة الدخول ليكتب ما كتبه للتوّ احتكاك بلا فائدة أمنية.
+    """
+    serializer = ResetPasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    try:
+        user = recovery.reset_password(
+            serializer.validated_data["ticket"],
+            serializer.validated_data["new_password"],
+        )
+    except recovery.RecoveryError as exc:
+        return _recovery_error(exc)
+    user.touch()
+    return Response({"user": UserSerializer(user).data, "tokens": tokens_for(user)})
 
 
 @extend_schema(summary="تسجيل جهاز لاستقبال الإشعارات", request=DeviceSerializer)

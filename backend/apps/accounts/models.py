@@ -44,7 +44,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField("الاسم", max_length=80)
     whatsapp_number = models.CharField(
         "رقم واتساب", max_length=20, blank=True,
-        help_text="يُترك فارغًا إن كان واتسابه على نفس رقم الحساب (plan2 §7.4)",
+        help_text="قناة التواصل ووصول رمز استعادة كلمة المرور. "
+                  "يُملأ برقم الحساب تلقائيًا إن تُرك فارغًا (plan3 §3.5)",
     )
 
     role = models.CharField("الدور", max_length=12, choices=Role.choices, default=Role.USER)
@@ -59,6 +60,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     auto_publish = models.BooleanField(
         "النشر التلقائي", default=False, db_index=True,
         help_text="إعلانات هذا المستخدم تُنشر فورًا بلا مراجعة — يمنحه الأدمن يدويًا",
+    )
+
+    password_changed_at = models.DateTimeField(
+        "آخر تغيير لكلمة المرور", null=True, blank=True,
+        help_text="ختم يُبطل كل رمز دخول صدر قبله — انظر accounts/tokens.py",
     )
 
     suspension_reason = models.CharField("سبب الإيقاف", max_length=200, blank=True)
@@ -83,6 +89,11 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.phone = normalize_phone(self.phone)
         if self.whatsapp_number:
             self.whatsapp_number = normalize_phone(self.whatsapp_number)
+        elif self.phone:
+            # رقم واتساب صار إجباريًا لأن رمز استعادة كلمة المرور يصل عليه.
+            # الملء هنا لا في المُسلسِل وحده: لوحة Django والأوامر والاختبارات
+            # تنشئ مستخدمين أيضًا، ولا يجوز أن ينشأ حساب بلا قناة استعادة.
+            self.whatsapp_number = self.phone
         # الدور هو مصدر الحقيقة الوحيد للصلاحيات
         self.is_superuser = self.role == self.Role.ADMIN
         super().save(*args, **kwargs)
@@ -125,6 +136,19 @@ class User(AbstractBaseUser, PermissionsMixin):
     def touch(self):
         """تحديث آخر ظهور بلا استدعاء save كامل."""
         User.objects.filter(pk=self.pk).update(last_seen_at=timezone.now())
+
+    def set_password_and_revoke_sessions(self, raw_password: str) -> None:
+        """
+        يبدّل كلمة المرور ويُخرج كل جهاز آخر.
+
+        الختم **مقطوع عند الثانية** عمدًا: `iat` في رمز JWT عدد ثوانٍ صحيح،
+        فلو حمل الختم كسورًا لصار الرمز الجديد الصادر في الثانية نفسها «أقدم»
+        من الختم فيُرفض — ولخرج المستخدم من حسابه لحظة استعادته.
+        """
+        self.set_password(raw_password)
+        self.password_changed_at = timezone.now().replace(microsecond=0)
+        self.save(update_fields=["password", "password_changed_at"])
+        self.devices.update(is_active=False)
 
 
 class Device(models.Model):
@@ -229,3 +253,138 @@ class DeletedAccount(models.Model):
         from django.conf import settings
 
         return hashlib.sha256(f"{settings.SECRET_KEY}:{phone}".encode()).hexdigest()
+
+
+class PasswordResetCode(models.Model):
+    """
+    رمز استعادة كلمة المرور — **في قاعدة البيانات لا في الذاكرة المؤقتة**.
+
+    ⚠️ هذا القرار ليس تفضيلًا. الخادم يعمل بـ`gunicorn --workers 3` والذاكرة
+    المؤقتة الافتراضية `LocMemCache` — ذاكرة داخل العملية الواحدة. الرمز الذي
+    يكتبه العامل الأول لا يراه الثاني ولا الثالث، فكانت ستفشل **ثلثا** محاولات
+    الاستعادة برسالة «الرمز غير صحيح» والرمز صحيح. عطب متقطّع لا يُعاد إنتاجه
+    عند من يفحصه — أسوأ ما يمكن أن يُبنى على باب الدخول.
+
+    والجدول يفيد ثانيةً: عدّ المحاولات وحدّ الإرسال يحتاجان تاريخًا، ولا تاريخ
+    في ذاكرة مؤقتة.
+    """
+
+    #: ستّ خانات — ما يُملى على الهاتف ويُكتب بلا خطأ.
+    CODE_LENGTH = 6
+    #: خمس دقائق. أطول من ذلك يوسّع نافذة من يطّلع على رسالة غيره.
+    TTL = timezone.timedelta(minutes=5)
+    #: خمس محاولات ثم يُحرق الرمز — حاجز أمام تخمين مليون احتمال.
+    MAX_ATTEMPTS = 5
+    #: ثلاث رسائل في الساعة للحساب الواحد — حماية له من الإزعاج، ولرقم البوت من الحظر.
+    MAX_PER_HOUR = 3
+
+    user = models.ForeignKey(
+        "accounts.User", verbose_name="المستخدم",
+        on_delete=models.CASCADE, related_name="password_reset_codes",
+    )
+    # الرمز مُجزَّأ لا صريحًا: من يطّلع على القاعدة لا ينتحل أحدًا
+    code_hash = models.CharField("بصمة الرمز", max_length=64, db_index=True)
+    sent_to = models.CharField("أُرسل إلى", max_length=20)
+    channel = models.CharField("القناة", max_length=16, default="whatsapp")
+    attempts = models.PositiveSmallIntegerField("المحاولات", default=0)
+    created_at = models.DateTimeField("أُنشئ في", auto_now_add=True, db_index=True)
+    expires_at = models.DateTimeField("ينتهي في")
+    consumed_at = models.DateTimeField("استُهلك في", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "رمز استعادة"
+        verbose_name_plural = "رموز الاستعادة"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "consumed_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} — {self.created_at:%Y-%m-%d %H:%M}"
+
+    # ------------------------------------------------------------------ الحالة
+
+    @property
+    def is_live(self) -> bool:
+        """صالح للاستعمال الآن: لم يُستهلك ولم ينتهِ ولم تُستنفد محاولاته."""
+        return (
+            self.consumed_at is None
+            and self.attempts < self.MAX_ATTEMPTS
+            and self.expires_at > timezone.now()
+        )
+
+    @property
+    def attempts_left(self) -> int:
+        return max(0, self.MAX_ATTEMPTS - self.attempts)
+
+    # ------------------------------------------------------------------ الإصدار
+
+    @staticmethod
+    def hash_code(code: str) -> str:
+        import hashlib
+
+        from django.conf import settings
+
+        return hashlib.sha256(f"{settings.SECRET_KEY}:reset:{code}".encode()).hexdigest()
+
+    @classmethod
+    def throttled(cls, user) -> bool:
+        """هل تجاوز هذا الحساب حدّ الإرسال في الساعة الماضية؟"""
+        hour_ago = timezone.now() - timezone.timedelta(hours=1)
+        return cls.objects.filter(user=user, created_at__gte=hour_ago).count() >= cls.MAX_PER_HOUR
+
+    @classmethod
+    def issue(cls, user, sent_to: str, channel: str = "whatsapp") -> tuple["PasswordResetCode", str]:
+        """
+        يولّد رمزًا جديدًا ويعيده مع صفّه. الرمز الصريح يُعاد **مرة واحدة** هنا
+        ولا يُخزَّن — المنادي يرسله فورًا ثم ينساه.
+
+        الإصدار الجديد يُبطل ما قبله: رمزان صالحان لحساب واحد يضاعفان فرصة من
+        يخمّن، ويربكان من طلب الرمز مرتين فوصلته رسالتان.
+        """
+        import secrets
+
+        cls.objects.filter(user=user, consumed_at__isnull=True).update(
+            consumed_at=timezone.now()
+        )
+        code = f"{secrets.randbelow(10 ** cls.CODE_LENGTH):0{cls.CODE_LENGTH}d}"
+        row = cls.objects.create(
+            user=user,
+            code_hash=cls.hash_code(code),
+            sent_to=sent_to,
+            channel=channel,
+            expires_at=timezone.now() + cls.TTL,
+        )
+        return row, code
+
+    @classmethod
+    def active_for(cls, user) -> "PasswordResetCode | None":
+        return (
+            cls.objects.filter(
+                user=user, consumed_at__isnull=True, expires_at__gt=timezone.now()
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+    def verify(self, code: str) -> bool:
+        """
+        يقارن الرمز ويحتسب المحاولة. يعيد True مرّة واحدة فقط لكل رمز صحيح.
+
+        المقارنة بـ`compare_digest` لا بـ`==`: الأخيرة تخرج عند أول حرف مختلف،
+        وفرق الزمن بين مقارنة تفشل في الحرف الأول وأخرى تفشل في الخامس يكفي
+        نظريًا لاستنتاج الرمز حرفًا حرفًا.
+        """
+        import secrets
+
+        if not self.is_live:
+            return False
+
+        matched = secrets.compare_digest(self.code_hash, self.hash_code(str(code)))
+        if matched:
+            self.consumed_at = timezone.now()
+            self.save(update_fields=["consumed_at"])
+            return True
+
+        # المحاولة الخاطئة تُحتسب حتى لو لم يُحرق الرمز — وإلا فلا معنى للحدّ
+        self.attempts += 1
+        self.save(update_fields=["attempts"])
+        return False

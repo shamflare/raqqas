@@ -6,6 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '../api/client';
 import { KeyboardScroll } from '../components/KeyboardScroll';
 import { Field, Input } from '../components/Field';
+import {
+  PhoneInput,
+  emptyPhone,
+  looksComplete,
+  toE164,
+  type PhoneValue,
+} from '../components/PhoneInput';
 import { useToast } from '../components/Toast';
 import { Button, Notice, Txt } from '../components/ui';
 import { useI18n } from '../i18n';
@@ -24,11 +31,21 @@ export function AuthScreen({ navigation, route }: Props) {
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState<PhoneValue>(emptyPhone());
   const [password, setPassword] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
+  const [whatsapp, setWhatsapp] = useState<PhoneValue>(emptyPhone());
+  /**
+   * هل لمس المستخدم حقل واتساب؟
+   *
+   * ما دام لم يلمسه، يتبع رقم الحساب حرفًا بحرف — لأن هذا هو الغالب، فلا نطلب
+   * منه كتابة الرقم نفسه مرتين. وأول تعديل منه يقطع الرابط فلا نعود ندوس على
+   * ما كتبه.
+   */
+  const [whatsappEdited, setWhatsappEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+
+  const whatsappValue = whatsappEdited ? whatsapp : phone;
 
   const reasonText: Record<string, string> = {
     contact: text.auth.loginRequiredContact,
@@ -45,12 +62,12 @@ export function AuthScreen({ navigation, route }: Props) {
     try {
       const user =
         mode === 'login'
-          ? await login({ phone, password })
+          ? await login({ phone: toE164(phone), password })
           : await register({
               name,
-              phone,
+              phone: toE164(phone),
               password,
-              whatsapp_number: whatsapp || undefined,
+              whatsapp_number: toE164(whatsappValue),
               language: lang,
             });
       toast.show(tp(text.auth.welcomeUser, { name: user.name }));
@@ -64,9 +81,9 @@ export function AuthScreen({ navigation, route }: Props) {
   };
 
   const canSubmit =
-    phone.trim().length >= 9 &&
+    looksComplete(phone) &&
     password.length >= 6 &&
-    (mode === 'login' || name.trim().length >= 2);
+    (mode === 'login' || (name.trim().length >= 2 && looksComplete(whatsappValue)));
 
   return (
     <View style={{ flex: 1, backgroundColor: t.colors.bg }}>
@@ -182,13 +199,10 @@ export function AuthScreen({ navigation, route }: Props) {
             hint={text.auth.phoneHint}
             error={error?.fieldError('phone')}
           >
-            <Input
+            <PhoneInput
               value={phone}
-              onChangeText={setPhone}
-              placeholder={text.auth.phonePlaceholder}
-              keyboardType="phone-pad"
-              autoComplete="tel"
-              ltr
+              onChange={setPhone}
+              invalid={Boolean(error?.fieldError('phone'))}
             />
           </Field>
 
@@ -206,18 +220,37 @@ export function AuthScreen({ navigation, route }: Props) {
             />
           </Field>
 
+          {mode === 'login' ? (
+            <Pressable
+              onPress={() =>
+                navigation.navigate('ForgotPassword', {
+                  // نحمل ما كتبه معه: من نسي كلمته لا يُطلب منه كتابة رقمه ثانيةً
+                  phone: looksComplete(phone) ? phone : undefined,
+                })
+              }
+              hitSlop={8}
+              style={{ marginTop: -6, marginBottom: 18 }}
+            >
+              <Txt size={13} weight={700} color={t.colors.brandText} align="end">
+                {text.auth.forgotPassword}
+              </Txt>
+            </Pressable>
+          ) : null}
+
           {mode === 'register' ? (
             <Field
               label={text.auth.whatsappNumber}
-              hint={text.account.whatsappHint}
+              required
+              hint={text.auth.whatsappRequiredHint}
               error={error?.fieldError('whatsapp_number')}
             >
-              <Input
-                value={whatsapp}
-                onChangeText={setWhatsapp}
-                placeholder={text.auth.phonePlaceholder}
-                keyboardType="phone-pad"
-                ltr
+              <PhoneInput
+                value={whatsappValue}
+                onChange={(value) => {
+                  setWhatsappEdited(true);
+                  setWhatsapp(value);
+                }}
+                invalid={Boolean(error?.fieldError('whatsapp_number'))}
               />
             </Field>
           ) : null}
