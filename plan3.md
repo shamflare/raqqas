@@ -401,6 +401,7 @@ def allow_request(self, request, view):
 | 13 | اختبارات الاستعادة والأرقام | `backend/tests/` |
 | 14 | توثيق التشغيل | `deploy/WHATSAPP.md` · `deploy/README.md` |
 | 15 | إصلاح محدِّدات المعدّل والمخزن المؤقّت | `core/throttling.py` · `03-deploy.sh` |
+| 16 | شاشة ربط واتساب في لوحة الإدارة | `web/app/admin/whatsapp/` · `notifications/admin_views.py` |
 
 ---
 

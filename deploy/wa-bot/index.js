@@ -10,6 +10,8 @@
  * - تُصغي على 127.0.0.1 وحدها — لا منفذ مكشوف على الإنترنت، ونقارن رمزًا
  *   مشتركًا في الترويسة فوق ذلك (دفاعان لا واحد).
  * - تحفظ الجلسة على القرص، فلا تحتاج مسح QR إلا مرّة واحدة.
+ * - **رمز QR يُقدَّم صورةً عبر `/status`** ليمسحه الأدمن من لوحة الإدارة بلا
+ *   طرفية ولا SSH. القرار: من يملك الرقم ليس بالضرورة من يملك الخادم.
  * - تعيد الاتصال تلقائيًا، وتميّز «انقطاع» من «خروج نهائي» — الثاني يحتاج
  *   إعادة ربط بشرية ولا فائدة من محاولات لا تنتهي.
  * - تُباعد بين الرسائل بفاصل عشوائي: دفقة رسائل متطابقة التوقيت من رقم واحد
@@ -17,19 +19,21 @@
  */
 
 import { createServer } from 'node:http';
+import { rm } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
-import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
+import qrcodeTerminal from 'qrcode-terminal';
 
 const PORT = Number(process.env.WA_BOT_PORT || 8787);
 const HOST = process.env.WA_BOT_HOST || '127.0.0.1';
 const TOKEN = process.env.WA_BOT_TOKEN || '';
 const SESSION_DIR = process.env.WA_SESSION_DIR || '/etc/souq/wa-session';
-/** وضع الربط: يعرض رمز QR ثم يخرج فور نجاح الاتصال. */
+/** وضع الربط من الطرفية: يطبع QR ثم يخرج فور نجاح الاتصال. */
 const PAIR_ONLY = process.env.WA_PAIR_ONLY === '1';
 
 /** فاصل بين رسالتين متتاليتين — يُشوّش على كاشفات الإرسال الآلي. */
@@ -57,18 +61,39 @@ const silentLogger = {
   },
 };
 
-/* ------------------------------------------------------------------ واتساب */
+/* ------------------------------------------------------------------ الحالة */
 
 let sock = null;
 let ready = false;
 let lastSentAt = 0;
+let connectedAt = null;
+/** آخر رمز QR صالح، صورةً جاهزة للعرض. يُمسح فور نجاح الربط. */
+let qrImage = null;
+let qrIssuedAt = null;
+/** يصير true حين يُلغى الربط نهائيًا — تقرؤه اللوحة فتعرض «أعد الربط». */
+let loggedOut = false;
+
+function state() {
+  return {
+    ready,
+    /** الرقم المرتبط، بلا لاحقة الجهاز */
+    number: sock?.user?.id ? '+' + sock.user.id.split(':')[0].split('@')[0] : null,
+    name: sock?.user?.name ?? null,
+    connected_at: connectedAt,
+    qr: qrImage,
+    qr_age: qrIssuedAt ? Math.round((Date.now() - qrIssuedAt) / 1000) : null,
+    logged_out: loggedOut,
+  };
+}
+
+/* ---------------------------------------------------------------- واتساب */
 
 async function connect() {
-  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+  const { state: auth, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
   sock = makeWASocket({
-    auth: state,
-    // لا نطبع QR بأنفسنا من داخل المكتبة: نتحكّم بالعرض في `connection.update`
+    auth,
+    // لا نطبع QR من داخل المكتبة: نتحكّم بالعرض في `connection.update`
     printQRInTerminal: false,
     // Baileys يتوقّع واجهة pino كاملة — وهو ثرثار جدًا على المستوى الافتراضي،
     // فنمرّر صامتًا. سجلّنا نحن في `log()` أعلاه ويكفي للتشخيص.
@@ -83,28 +108,48 @@ async function connect() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('\n امسح رمز QR من واتساب ← الأجهزة المرتبطة ← ربط جهاز:\n');
-      qrcode.generate(qr, { small: true });
+      loggedOut = false;
+      qrIssuedAt = Date.now();
+      // صورة للوحة الإدارة…
+      qrImage = await QRCode.toDataURL(qr, { margin: 1, width: 320 })
+        .catch((error) => {
+          log('تعذّر توليد صورة QR:', error?.message);
+          return null;
+        });
+      // …ونصّ للطرفية، لمن يفضّل الربط عبر SSH
+      if (PAIR_ONLY) {
+        console.log('\n امسح رمز QR من واتساب ← الأجهزة المرتبطة ← ربط جهاز:\n');
+        qrcodeTerminal.generate(qr, { small: true });
+      } else {
+        log('رمز QR جديد جاهز — افتح لوحة الإدارة ← واتساب');
+      }
     }
 
     if (connection === 'open') {
       ready = true;
+      loggedOut = false;
+      qrImage = null;
+      qrIssuedAt = null;
+      connectedAt = new Date().toISOString();
       log('متصل بواتساب ✅', sock.user?.id ?? '');
       if (PAIR_ONLY) {
         log('تم الربط. الجلسة محفوظة في', SESSION_DIR);
-        // مهلة قصيرة ليُكتب الاعتماد على القرص قبل الخروج
-        await sleep(2000);
+        await sleep(2000); // ليُكتب الاعتماد على القرص قبل الخروج
         process.exit(0);
       }
     }
 
     if (connection === 'close') {
       ready = false;
+      connectedAt = null;
       const status = lastDisconnect?.error?.output?.statusCode;
       // `loggedOut` يعني أن الربط أُلغي من الهاتف أو حُظر الرقم: إعادة المحاولة
-      // لن تنجح أبدًا، وتكرارها بلا نهاية يملأ السجلّ ويخفي السبب الحقيقي.
+      // بنفس الجلسة لن تنجح أبدًا. نمسح الجلسة ونعيد الاتصال ليُولَّد QR جديد،
+      // فيستطيع الأدمن الربط من اللوحة بلا لمس الخادم.
       if (status === DisconnectReason.loggedOut) {
-        log('انتهى الربط نهائيًا — يلزم مسح QR من جديد: npm run pair');
+        log('انتهى الربط — نمسح الجلسة ونعرض رمزًا جديدًا');
+        loggedOut = true;
+        await resetSession();
         return;
       }
       log('انقطع الاتصال، إعادة المحاولة بعد 5 ثوانٍ…', status ?? '');
@@ -112,6 +157,22 @@ async function connect() {
       connect().catch((error) => log('فشل إعادة الاتصال:', error?.message));
     }
   });
+}
+
+/** يمحو ملفات الجلسة ويعيد الاتصال — فيبدأ الربط من الصفر. */
+async function resetSession() {
+  try {
+    sock?.ev?.removeAllListeners?.();
+    sock?.end?.(undefined);
+  } catch {
+    /* السوكيت ميت أصلًا */
+  }
+  sock = null;
+  ready = false;
+  qrImage = null;
+  await rm(SESSION_DIR, { recursive: true, force: true });
+  await sleep(1000);
+  return connect();
 }
 
 async function sendText(to, text) {
@@ -156,40 +217,66 @@ const json = (response, code, payload) => {
   response.end(JSON.stringify(payload));
 };
 
+const authorized = (request) => request.headers['x-bot-token'] === TOKEN;
+
+const ROUTES = {
+  'GET /health': async (request, response) => json(response, ready ? 200 : 503, { ready }),
+
+  'GET /status': async (request, response) => {
+    if (!authorized(request)) return json(response, 401, { error: 'unauthorized' });
+    return json(response, 200, state());
+  },
+
+  'POST /logout': async (request, response) => {
+    if (!authorized(request)) return json(response, 401, { error: 'unauthorized' });
+    // فكّ الربط من طرفنا **وطرف واتساب**: مسح الملفات وحده يترك الجهاز ظاهرًا
+    // في قائمة «الأجهزة المرتبطة» على هاتف صاحب الرقم إلى الأبد.
+    try {
+      await sock?.logout?.();
+    } catch (error) {
+      log('تعذّر إبلاغ واتساب بفكّ الربط:', error?.message);
+    }
+    await resetSession();
+    log('فُكّ الربط بطلب من اللوحة');
+    return json(response, 200, { ok: true });
+  },
+
+  'POST /send': async (request, response) => {
+    if (!authorized(request)) return json(response, 401, { error: 'unauthorized' });
+
+    let payload;
+    try {
+      payload = JSON.parse((await readBody(request)) || '{}');
+    } catch {
+      return json(response, 400, { error: 'bad_json' });
+    }
+
+    const { to, text } = payload;
+    if (!to || !text) return json(response, 400, { error: 'missing_fields' });
+
+    try {
+      await sendText(to, text);
+      // لا نسجّل نصّ الرسالة: فيه رمز الاستعادة، ولا مكان له في سجلّ الخادم
+      log('أُرسلت رسالة إلى', String(to).slice(0, 5) + '…');
+      return json(response, 200, { sent: true });
+    } catch (error) {
+      log('فشل الإرسال:', error?.message);
+      return json(response, error?.expected ? 422 : 502, {
+        error: error?.message || 'send_failed',
+      });
+    }
+  },
+};
+
 const server = createServer(async (request, response) => {
-  if (request.method === 'GET' && request.url === '/health') {
-    return json(response, ready ? 200 : 503, { ready });
-  }
-
-  if (request.method !== 'POST' || request.url !== '/send') {
-    return json(response, 404, { error: 'not_found' });
-  }
-
-  if (request.headers['x-bot-token'] !== TOKEN) {
-    log('طلب برمز خاطئ — مرفوض');
-    return json(response, 401, { error: 'unauthorized' });
-  }
-
-  let payload;
+  const path = (request.url || '').split('?')[0];
+  const handler = ROUTES[`${request.method} ${path}`];
+  if (!handler) return json(response, 404, { error: 'not_found' });
   try {
-    payload = JSON.parse((await readBody(request)) || '{}');
-  } catch {
-    return json(response, 400, { error: 'bad_json' });
-  }
-
-  const { to, text } = payload;
-  if (!to || !text) return json(response, 400, { error: 'missing_fields' });
-
-  try {
-    await sendText(to, text);
-    // لا نسجّل نصّ الرسالة: فيه رمز الاستعادة، ولا مكان له في سجلّ الخادم
-    log('أُرسلت رسالة إلى', String(to).slice(0, 5) + '…');
-    return json(response, 200, { sent: true });
+    await handler(request, response);
   } catch (error) {
-    log('فشل الإرسال:', error?.message);
-    return json(response, error?.expected ? 422 : 502, {
-      error: error?.message || 'send_failed',
-    });
+    log('خطأ غير متوقّع:', error?.message);
+    if (!response.headersSent) json(response, 500, { error: 'internal' });
   }
 });
 

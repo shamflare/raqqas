@@ -159,6 +159,49 @@ def _post_json(url: str, payload: dict, headers: dict) -> dict:
         raise WhatsAppError(str(exc)) from exc
 
 
+# ---------------------------------------------------------------- إدارة البوت
+
+
+def _bot_request(path: str, method: str = "GET", payload: dict | None = None) -> dict:
+    """نداء إداري للخدمة الجانبية — الحالة وفكّ الربط."""
+    if not settings.WHATSAPP_BOT_URL or not settings.WHATSAPP_BOT_TOKEN:
+        raise WhatsAppError("خدمة واتساب غير مضبوطة على الخادم.")
+    url = f"{settings.WHATSAPP_BOT_URL.rstrip('/')}{path}"
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload or {}).encode("utf-8") if method == "POST" else None,
+        headers={
+            "Content-Type": "application/json",
+            "X-Bot-Token": settings.WHATSAPP_BOT_TOKEN,
+        },
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            return json.loads(response.read() or b"{}")
+    except urllib.error.URLError as exc:
+        # الخدمة موقوفة أو لم تُنصَّب — حالة عادية لا خطأ برمجي
+        raise WhatsAppError("خدمة واتساب لا تستجيب — تأكّد أنها تعمل.") from exc
+    except Exception as exc:
+        logger.error("واتساب (إدارة) %s ← %s", url, exc)
+        raise WhatsAppError(str(exc)) from exc
+
+
+def bot_status() -> dict:
+    """
+    حالة الربط كما تعرضها لوحة الإدارة: متصل؟ بأي رقم؟ وإلا فرمز QR للمسح.
+
+    يُعاد رمز QR صورةً جاهزة (data URL) لا نصًّا: توليد الصورة في البوت يعني
+    أن اللوحة لا تحتاج مكتبة QR ولا يحتاج المتصفّح تحميل شيء من الخارج.
+    """
+    return _bot_request("/status")
+
+
+def bot_logout() -> dict:
+    """فكّ الربط ومسح الجلسة — يعود البوت فيعرض رمزًا جديدًا."""
+    return _bot_request("/logout", method="POST")
+
+
 #: نصّ رسالة الرمز بثلاث لغات.
 #:
 #: قصيرة وبلا أي رابط عمدًا — الروابط أكثر ما يُشعل الحظر الآلي على أرقام

@@ -15,6 +15,7 @@ const LINKS = [
   { href: '/admin/users', icon: '👥', label: 'المستخدمون' },
   { href: '/admin/categories', icon: '📂', label: 'الأقسام', adminOnly: true },
   { href: '/admin/design', icon: '🎨', label: 'محرّر التصميم', adminOnly: true },
+  { href: '/admin/whatsapp', icon: '💬', label: 'واتساب', adminOnly: true },
   { href: '/admin/updates', icon: '🔄', label: 'التحديثات', adminOnly: true },
   { href: '/admin/settings', icon: '⚙️', label: 'الإعدادات', adminOnly: true },
 ];
