@@ -5,7 +5,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, View } from 'react-native';
 
 import { ApiError, api } from '../api/client';
-import { deletePhoto, uploadPhotos, type PickedPhoto } from '../api/photos';
+import {
+  deletePhoto,
+  uploadPhotos,
+  uploadVideo,
+  type PickedPhoto,
+  type PickedVideo,
+} from '../api/photos';
 import type { Category, City, Listing, Media } from '../api/types';
 import { ChoiceGroup, Field, Input, SelectButton, TextArea } from '../components/Field';
 import { KeyboardScroll } from '../components/KeyboardScroll';
@@ -13,6 +19,7 @@ import { SubHeader } from '../components/Header';
 import { OptionList, Sheet } from '../components/Sheet';
 import { useToast } from '../components/Toast';
 import { Button, Empty, Loader, Notice, Txt } from '../components/ui';
+import { usePickVideo, VideoTile } from '../components/Video';
 import { useResource } from '../hooks/useResource';
 import { useI18n } from '../i18n';
 import type { RootStackParamList } from '../navigation/types';
@@ -47,6 +54,10 @@ export function EditListingScreen({ navigation, route }: Props) {
 
   const [existing, setExisting] = useState<Media[]>([]);
   const [added, setAdded] = useState<PickedPhoto[]>([]);
+  // الفيديو منفصل عن الصور: حصّته غير حصّتها، ولا يصير «الصورة الرئيسية»
+  const [existingVideo, setExistingVideo] = useState<Media | null>(null);
+  const [addedVideo, setAddedVideo] = useState<PickedVideo | null>(null);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
 
   const [sheet, setSheet] = useState<'parent' | 'child' | 'city' | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,7 +78,9 @@ export function EditListingScreen({ navigation, route }: Props) {
     setCategoryId(listing.category?.id ?? null);
     setCityId(listing.city?.id ?? null);
     setAddress(listing.address ?? '');
-    setExisting(listing.media ?? []);
+    const media = listing.media ?? [];
+    setExisting(media.filter((item) => item.kind !== 'video'));
+    setExistingVideo(media.find((item) => item.kind === 'video') ?? null);
     setReady(true);
   }, [listing, ready]);
 
@@ -76,6 +89,8 @@ export function EditListingScreen({ navigation, route }: Props) {
   const city = useMemo(() => cities?.find((c) => c.id === cityId) ?? null, [cities, cityId]);
   const maxPhotos = config.limits.max_photos_per_listing;
   const photoCount = existing.length + added.length;
+  const maxVideoSeconds = config.limits.max_video_seconds;
+  const pickVideo = usePickVideo();
 
   /* ---------------------------------------------------------------- الصور */
 
@@ -130,6 +145,26 @@ export function EditListingScreen({ navigation, route }: Props) {
   const removeAdded = (index: number) =>
     setAdded((current) => current.filter((_, i) => i !== index));
 
+  /** حذف الفيديو المرفوع — فوريّ على الخادم كحذف الصور، وللسبب نفسه. */
+  const removeExistingVideo = (media: Media) => {
+    Alert.alert(text.edit.deleteVideo, text.edit.deleteVideoText, [
+      { text: text.common.cancel, style: 'cancel' },
+      {
+        text: text.common.delete,
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deletePhoto(listingId, media.id);
+            setExistingVideo(null);
+            toast.show(text.edit.videoDeleted);
+          } catch (caught) {
+            toast.show(caught instanceof ApiError ? caught.message : text.errors.generic);
+          }
+        },
+      },
+    ]);
+  };
+
   /* ---------------------------------------------------------------- الحفظ */
 
   const canSave =
@@ -170,6 +205,18 @@ export function EditListingScreen({ navigation, route }: Props) {
         }
       }
 
+      if (addedVideo) {
+        setUploadingVideo(true);
+        const outcome = await uploadVideo(listingId, addedVideo);
+        setUploadingVideo(false);
+        if (!outcome.ok) {
+          toast.show(outcome.message);
+          return;
+        }
+        setAddedVideo(null);
+        setExistingVideo(outcome.media);
+      }
+
       toast.show(text.edit.saved);
       navigation.goBack();
     } catch (caught) {
@@ -178,6 +225,7 @@ export function EditListingScreen({ navigation, route }: Props) {
     } finally {
       setBusy(false);
       setProgress(null);
+      setUploadingVideo(false);
     }
   };
 
@@ -331,6 +379,27 @@ export function EditListingScreen({ navigation, route }: Props) {
           </View>
         </Field>
 
+        {maxVideoSeconds > 0 || existingVideo ? (
+          <Field
+            label={`🎬 ${text.add.video}`}
+            hint={tp(text.add.videoHint, { seconds: maxVideoSeconds })}
+          >
+            <VideoTile
+              picked={addedVideo}
+              existing={existingVideo}
+              onAdd={async () => {
+                const clip = await pickVideo();
+                if (clip) setAddedVideo(clip);
+              }}
+              onRemove={() =>
+                addedVideo
+                  ? setAddedVideo(null)
+                  : existingVideo && removeExistingVideo(existingVideo)
+              }
+            />
+          </Field>
+        ) : null}
+
         <Field
           label={text.add.listingTitle}
           required
@@ -435,7 +504,9 @@ export function EditListingScreen({ navigation, route }: Props) {
           title={
             progress
               ? tp(text.add.uploadingPhotos, { done: progress.done, total: progress.total })
-              : busy
+              : uploadingVideo
+                ? text.add.uploadingVideo
+                : busy
                 ? text.edit.saving
                 : text.edit.save
           }

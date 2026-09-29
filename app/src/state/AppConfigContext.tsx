@@ -85,6 +85,8 @@ export const FALLBACK_CONFIG: AppConfig = {
     listing_expiry_days: 60,
     daily_listing_limit: 5,
     max_photos_per_listing: 10,
+    max_video_seconds: 60,
+    max_video_mb: 100,
     min_description_length: 10,
   },
   support: { whatsapp: '', email: '' },

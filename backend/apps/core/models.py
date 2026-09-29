@@ -155,6 +155,14 @@ class AppConfig(TimeStampedModel):
     listing_expiry_days = models.PositiveSmallIntegerField("مدة صلاحية الإعلان (يوم)", default=60)
     daily_listing_limit = models.PositiveSmallIntegerField("حد الإعلانات اليومي", default=5)
     max_photos_per_listing = models.PositiveSmallIntegerField("أقصى عدد صور", default=10)
+    max_video_seconds = models.PositiveSmallIntegerField(
+        "أقصى مدة للفيديو (ثانية)", default=60,
+        help_text="فيديو واحد لكل إعلان. صفر = إيقاف رفع الفيديو",
+    )
+    max_video_mb = models.PositiveSmallIntegerField(
+        "أقصى حجم للفيديو (ميغابايت)", default=100,
+        help_text="حجم الملف كما يرفعه الجوال، قبل ضغطه على الخادم",
+    )
 
     # ---------------- التواصل
     support_whatsapp = models.CharField("واتساب الدعم", max_length=24, blank=True)
@@ -280,6 +288,7 @@ class AdminLog(models.Model):
         ("user_ban", "حظر مستخدم"),
         ("user_activate", "تفعيل مستخدم"),
         ("user_auto_publish", "تبديل النشر التلقائي"),
+        ("user_password", "تعيين كلمة مرور لمستخدم"),
         ("config", "تعديل الإعدادات"),
         ("report_resolve", "معالجة بلاغ"),
         ("account_deleted", "حذف حساب بطلب صاحبه"),

@@ -28,6 +28,22 @@ const STATUS_LABELS: Record<string, string> = {
   banned: 'محظور',
 };
 
+/**
+ * كلمة مقترحة سهلة الإملاء على الهاتف: أربعة أحرف لاتينية صغيرة ثم أربعة أرقام.
+ * لا أرقام فقط — المدقّق في الخادم يرفض الكلمة الرقمية بالكامل.
+ * والأحرف المتشابهة (l · o · i) محذوفة كي لا يخطئ العميل في كتابتها.
+ */
+function suggestPassword(): string {
+  const letters = 'abcdefghjkmnpqrstuvwxyz';
+  const random = new Uint32Array(8);
+  crypto.getRandomValues(random);
+  const head = Array.from(random.slice(0, 4), (n) => letters[n % letters.length]).join('');
+  const tail = Array.from(random.slice(4), (n) => String(n % 10)).join('');
+  return head + tail;
+}
+
+type IssuedPassword = { name: string; phone: string; password: string };
+
 const ROLE_LABELS: Record<string, string> = {
   user: 'مستخدم',
   moderator: 'مشرف',
@@ -42,6 +58,9 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   // تبديلات لم يردّ عليها الخادم بعد — تُعرض فورًا كي لا يبدو المربّع متجمّدًا
   const [pending, setPending] = useState<Record<number, boolean>>({});
+  // آخر كلمة عُيّنت — تبقى ظاهرة حتى يغلقها المدير، كي ينسخها ويرسلها للعميل
+  const [issued, setIssued] = useState<IssuedPassword | null>(null);
+  const isAdmin = me?.role === 'admin';
 
   const { data, loading, reload } = useApi<Page>('/admin/users', {
     q: query || undefined,
@@ -94,10 +113,67 @@ export default function UsersPage() {
     }
   };
 
+  /**
+   * تعيين كلمة جديدة لعميل تواصل مع الإدارة.
+   *
+   * نقترح كلمة جاهزة يستطيع المدير تعديلها. والخادم يُخرج العميل من كل أجهزته،
+   * فيدخل بعدها بالكلمة الجديدة وحدها.
+   */
+  const resetPassword = async (row: AdminUserRow) => {
+    const entered = prompt(
+      `كلمة المرور الجديدة لـ ${row.name} (${row.phone}):\n` +
+        'يمكنك تعديل الكلمة المقترحة — 6 خانات على الأقل، ولا تكون أرقامًا فقط.',
+      suggestPassword(),
+    );
+    if (entered === null) return;
+    const password = entered.trim();
+    if (!password) return;
+    try {
+      await api(`/admin/users/${row.id}/password`, {
+        method: 'POST',
+        body: { new_password: password },
+      });
+      setIssued({ name: row.name, phone: row.phone, password });
+      toast(`عُيّنت كلمة مرور جديدة لـ ${row.name}`);
+    } catch (caught) {
+      toast((caught as Error).message);
+    }
+  };
+
+  const copyIssued = async () => {
+    if (!issued) return;
+    try {
+      await navigator.clipboard.writeText(issued.password);
+      toast('نُسخت كلمة المرور');
+    } catch {
+      toast('تعذّر النسخ — انسخها يدويًا');
+    }
+  };
+
   return (
     <div>
       <h1 className="page-title">👥 المستخدمون</h1>
       <p className="page-sub">{data ? `${data.count} حسابًا` : '…'}</p>
+
+      {issued ? (
+        <div className="card mb-16" style={{ borderColor: 'var(--success)' }}>
+          <div className="card-title">🔑 كلمة المرور الجديدة لـ {issued.name}</div>
+          <p className="muted txt-sm mb-12">
+            أرسلها للعميل على رقمه <span className="ltr">{issued.phone}</span>. خرج من كل أجهزته،
+            ويدخل الآن برقمه وهذه الكلمة. لن تظهر مرة أخرى بعد إغلاق هذا المربّع.
+          </p>
+          <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+            <code
+              className="ltr bold"
+              style={{ fontSize: 20, letterSpacing: 2, padding: '6px 14px', background: 'var(--brand-50)', borderRadius: 8 }}
+            >
+              {issued.password}
+            </code>
+            <button className="btn btn-primary btn-sm" onClick={copyIssued}>نسخ</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setIssued(null)}>إغلاق</button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="row wrap mb-16" style={{ gap: 8 }}>
         {['', 'active', 'suspended', 'banned'].map((value) => (
@@ -186,6 +262,15 @@ export default function UsersPage() {
                         <span className="muted txt-sm">—</span>
                       ) : (
                         <div className="row" style={{ gap: 5 }}>
+                          {isAdmin ? (
+                            <button
+                              className="btn btn-soft btn-sm"
+                              onClick={() => resetPassword(row)}
+                              title="تعيين كلمة مرور جديدة لهذا الحساب"
+                            >
+                              🔑 كلمة المرور
+                            </button>
+                          ) : null}
                           {row.status !== 'active' ? (
                             <button
                               className="btn btn-success btn-sm"

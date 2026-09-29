@@ -161,6 +161,8 @@ export default function SettingsPage() {
           listing_expiry_days: Number(form.listing_expiry_days ?? 60),
           daily_listing_limit: Number(form.daily_listing_limit ?? 5),
           max_photos_per_listing: Number(form.max_photos_per_listing ?? 10),
+          max_video_seconds: Number(form.max_video_seconds ?? 60),
+          max_video_mb: Number(form.max_video_mb ?? 100),
           default_language: form.default_language,
           features: form.features,
           support_whatsapp: form.support_whatsapp,
@@ -467,6 +469,10 @@ export default function SettingsPage() {
         </div>
         <div className="row-2">
           <Num form={form} set={set} k="listing_expiry_days" label="مدة صلاحية الإعلان (يوم)" />
+        </div>
+        <div className="row-2">
+          <Num form={form} set={set} k="max_video_seconds" label="أقصى مدة للفيديو (ثانية) — صفر يوقفه" />
+          <Num form={form} set={set} k="max_video_mb" label="أقصى حجم للفيديو قبل الضغط (ميغابايت)" />
         </div>
       </div>
 

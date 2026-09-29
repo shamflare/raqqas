@@ -7,9 +7,13 @@
     كشف رقم البائع                 → يحتاج تسجيلًا (ويُسجَّل كإجراء)
 """
 
+import uuid
+from pathlib import Path
+
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, F, Q
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Case, Count, F, Q, When
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -21,6 +25,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import Block
 from apps.core.images import process_upload
+from apps.core.videos import inspect_upload
 from apps.core.models import AdminLog, AppConfig
 from apps.core.pagination import DefaultPagination
 from apps.core.throttling import FixedScopeThrottle
@@ -39,6 +44,14 @@ from .serializers import (
     RejectionReasonSerializer,
     ReportSerializer,
 )
+
+
+def _video_name(original: str | None) -> str:
+    """اسم نظيف للملف الأصلي — امتداده كما جاء، فقد يكون mp4 أو mov أو 3gp."""
+    suffix = Path(original or "").suffix.lower()
+    if suffix not in {".mp4", ".mov", ".m4v", ".3gp", ".webm", ".mkv"}:
+        suffix = ".mp4"
+    return f"video-{uuid.uuid4().hex[:12]}{suffix}"
 
 
 class WriteThrottle(FixedScopeThrottle):
@@ -95,7 +108,7 @@ class ListingViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def get_throttles(self):
-        if self.action in {"create", "update", "partial_update", "upload_media"}:
+        if self.action in {"create", "update", "partial_update", "upload_media", "upload_video"}:
             return [WriteThrottle()]
         return super().get_throttles()
 
@@ -225,7 +238,8 @@ class ListingViewSet(viewsets.ModelViewSet):
         if not images:
             raise ValidationError({"images": "لم تُرفع أي صورة."})
 
-        existing = listing.media.count()
+        # الفيديو لا يُحسب من حصّة الصور — له حصّته (واحد لكل إعلان)
+        existing = listing.media.filter(kind=ListingMedia.Kind.PHOTO).count()
         room = config.max_photos_per_listing - existing
         if room <= 0:
             raise ValidationError({
@@ -253,7 +267,62 @@ class ListingViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    @extend_schema(summary="حذف صورة")
+    @extend_schema(summary="رفع فيديو لإعلان (واحد فقط)")
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated],
+            url_path="video", parser_classes=[MultiPartParser, FormParser])
+    def upload_video(self, request, pk=None):
+        """
+        مقطع واحد لكل إعلان، بمدة وحجم تضبطهما الإدارة (AppConfig).
+
+        يُفحص ويُستخرج غلافه هنا، ويُحفظ الأصلي كما هو فيُعرض فورًا. الضغط
+        يجري بعدها خارج الطلب (`manage.py process_videos`) — انظر apps/core/videos.py.
+        """
+        listing = self.get_object()
+        if listing.user_id != request.user.id:
+            raise PermissionDenied("لا يمكنك رفع فيديو لإعلان لا تملكه.")
+
+        config = AppConfig.get_solo()
+        if not config.max_video_seconds:
+            raise ValidationError({"video": "رفع الفيديو متوقّف حاليًا."})
+
+        uploaded = request.FILES.get("video")
+        if not uploaded:
+            raise ValidationError({"video": "لم يُرفع أي فيديو."})
+        if listing.media.filter(kind=ListingMedia.Kind.VIDEO).exists():
+            raise ValidationError({"video": "للإعلان فيديو بالفعل — احذفه أولًا لترفع غيره."})
+
+        try:
+            inspected = inspect_upload(
+                uploaded,
+                max_seconds=config.max_video_seconds,
+                max_bytes=config.max_video_mb * 1024 * 1024,
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"video": exc.messages[0]}) from exc
+
+        cover = inspected["poster"]
+        media = ListingMedia(
+            listing=listing,
+            kind=ListingMedia.Kind.VIDEO,
+            width=cover["width"],
+            height=cover["height"],
+            duration=inspected["duration"],
+            video_state=ListingMedia.VideoState.PENDING,
+            # بعد الصور في ترتيب الخادم: التطبيق القديم يعرض الغلاف آخر المعرض
+            sort_order=1000,
+            is_main=False,
+        )
+        media.image.save(cover["full"].name, cover["full"], save=False)
+        media.thumb.save(cover["thumb"].name, cover["thumb"], save=False)
+        media.video.save(_video_name(uploaded.name), uploaded, save=False)
+        media.save()
+
+        return Response(
+            MediaSerializer(media, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(summary="حذف صورة أو فيديو")
     @action(detail=True, methods=["delete"], permission_classes=[IsAuthenticated],
             url_path=r"media/(?P<media_id>\d+)")
     def delete_media(self, request, pk=None, media_id=None):
@@ -270,9 +339,13 @@ class ListingViewSet(viewsets.ModelViewSet):
         # (prefetch_related) ما تزال تحوي الصورة المحذوفة، فكنّا نحاول ترقية صفٍّ
         # لم يعد موجودًا فيسقط الطلب بخطأ 500 عند حذف الصورة الرئيسية تحديدًا.
         if was_main:
+            # صورة أولًا — غلاف الفيديو لا يصير الصورة الرئيسية ما دامت هناك صور
             first = (
                 ListingMedia.objects.filter(listing_id=listing.pk)
-                .order_by("sort_order", "id")
+                .order_by(
+                    Case(When(kind=ListingMedia.Kind.PHOTO, then=0), default=1),
+                    "sort_order", "id",
+                )
                 .first()
             )
             if first:

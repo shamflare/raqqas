@@ -130,6 +130,8 @@ class AppConfigSerializer(serializers.ModelSerializer):
             "listing_expiry_days": obj.listing_expiry_days,
             "daily_listing_limit": obj.daily_listing_limit,
             "max_photos_per_listing": obj.max_photos_per_listing,
+            "max_video_seconds": obj.max_video_seconds,
+            "max_video_mb": obj.max_video_mb,
             "min_description_length": defaults.DEFAULT_LIMITS["min_description_length"],
         }
 
@@ -203,6 +205,7 @@ class AppConfigWriteSerializer(serializers.ModelSerializer):
             "update_message_ar", "update_message_tr", "update_message_en",
             "features", "review_mode", "review_threshold",
             "listing_expiry_days", "daily_listing_limit", "max_photos_per_listing",
+            "max_video_seconds", "max_video_mb",
             "support_whatsapp", "support_email",
         ]
 

@@ -45,6 +45,20 @@ server {
     add_header Referrer-Policy strict-origin-when-cross-origin always;
 
     # ---------------------------------------------------------- الواجهة البرمجية
+    # رفع فيديو الإعلان — الحدّ العام لا يتّسع لمقطع دقيقة من جوال (16-video.sh)
+    location ~ ^/api/v1/listings/[0-9]+/video$ {
+        client_max_body_size 150M;
+        client_body_timeout 300s;
+        proxy_pass http://souq_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+        proxy_read_timeout 120s;
+    }
+
     location /api/ {
         proxy_pass http://souq_app;
         proxy_http_version 1.1;

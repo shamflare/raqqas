@@ -28,6 +28,8 @@ urlpatterns = [
     path("admin/users/<int:pk>/status", admin_views.set_user_status, name="admin-user-status"),
     path("admin/users/<int:pk>/auto-publish", admin_views.set_user_auto_publish,
          name="admin-user-auto-publish"),
+    path("admin/users/<int:pk>/password", admin_views.set_user_password,
+         name="admin-user-password"),
 
     path("", include(router.urls)),
 ]

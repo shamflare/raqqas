@@ -69,6 +69,9 @@ export type AppConfig = {
     listing_expiry_days: number;
     daily_listing_limit: number;
     max_photos_per_listing: number;
+    /** صفر = رفع الفيديو متوقّف. */
+    max_video_seconds: number;
+    max_video_mb: number;
     min_description_length: number;
   };
   support: { whatsapp: string; email: string };
@@ -116,8 +119,13 @@ export type City = {
 export type Media = {
   id: number;
   kind: 'photo' | 'video';
+  /** للفيديو: صورة الغلاف. */
   url: string;
   thumb_url: string;
+  /** رابط المقطع نفسه — للفيديو فقط. */
+  video_url?: string | null;
+  /** مدة الفيديو بالثواني. */
+  duration?: number;
   width: number;
   height: number;
   is_main: boolean;

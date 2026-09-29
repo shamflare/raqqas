@@ -21,7 +21,8 @@ class AppConfigAdmin(admin.ModelAdmin):
                                 "update_message_en")}),
         ("التشغيل", {"fields": ("features", "review_mode", "review_threshold",
                                 "listing_expiry_days", "daily_listing_limit",
-                                "max_photos_per_listing")}),
+                                "max_photos_per_listing", "max_video_seconds",
+                                "max_video_mb")}),
         ("الدعم", {"fields": ("support_whatsapp", "support_email")}),
     )
 

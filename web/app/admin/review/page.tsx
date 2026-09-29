@@ -16,7 +16,14 @@ import { Empty, Notice, Spinner, useAdmin, useApi, waitLabel } from '@/lib/admin
  *   · اختصارات لوحة المفاتيح (م / ر / ← →) لمن يراجع عشرات الإعلانات
  */
 
-type Media = { id: number; url: string; thumb_url: string };
+type Media = {
+  id: number;
+  kind: 'photo' | 'video';
+  url: string;
+  thumb_url: string;
+  video_url?: string | null;
+  duration?: number;
+};
 
 type ReviewListing = {
   id: number;
@@ -138,19 +145,44 @@ export default function ReviewPage() {
           <div className="card">
             {listing.media.length > 0 ? (
               <>
-                <img
-                  className="review-photo"
-                  src={listing.media[photo]?.url}
-                  alt={listing.title}
-                />
+                {listing.media[photo]?.kind === 'video' && listing.media[photo]?.video_url ? (
+                  // المراجع يشاهد الفيديو كاملًا قبل القبول — المحتوى المرئي يُراجَع كالصور
+                  <>
+                    <video
+                      key={listing.media[photo].id}
+                      className="review-photo"
+                      src={listing.media[photo].video_url ?? undefined}
+                      poster={listing.media[photo].url}
+                      controls
+                      preload="metadata"
+                      style={{ background: '#000' }}
+                    />
+                    <a
+                      className="muted txt-sm"
+                      href={listing.media[photo].video_url ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      لا يعمل التشغيل؟ افتح الملف مباشرة ↗
+                    </a>
+                  </>
+                ) : (
+                  <img
+                    className="review-photo"
+                    src={listing.media[photo]?.url}
+                    alt={listing.title}
+                  />
+                )}
                 {listing.media.length > 1 ? (
                   <div className="review-thumbs">
                     {listing.media.map((item, i) => (
                       <img
                         key={item.id}
                         src={item.thumb_url}
-                        alt=""
+                        alt={item.kind === 'video' ? 'فيديو' : ''}
+                        title={item.kind === 'video' ? `🎬 فيديو · ${item.duration ?? 0} ثانية` : undefined}
                         className={i === photo ? 'is-active' : ''}
+                        style={item.kind === 'video' ? { outline: '2px solid var(--gold)' } : undefined}
                         onClick={() => setPhoto(i)}
                       />
                     ))}
@@ -166,7 +198,8 @@ export default function ReviewPage() {
               </div>
             )}
             <p className="muted txt-sm mt-8">
-              {listing.media.length} صورة · وصل منذ {waitLabel(listing.waiting_minutes)}
+              {listing.media.filter((m) => m.kind !== 'video').length} صورة
+              {listing.media.some((m) => m.kind === 'video') ? ' · 🎬 فيديو' : ''} · وصل منذ {waitLabel(listing.waiting_minutes)}
             </p>
           </div>
 

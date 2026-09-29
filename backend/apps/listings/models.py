@@ -197,9 +197,22 @@ class ListingMedia(models.Model):
     listing = models.ForeignKey(
         Listing, verbose_name="الإعلان", on_delete=models.CASCADE, related_name="media"
     )
+    class VideoState(models.TextChoices):
+        NONE = "", "—"
+        PENDING = "pending", "بانتظار الضغط"
+        READY = "ready", "مضغوط"
+        FAILED = "failed", "تعذّر الضغط (يُعرض الأصلي)"
+
     kind = models.CharField("النوع", max_length=8, choices=Kind.choices, default=Kind.PHOTO)
+    # للفيديو: صورة الغلاف. هكذا يعرضه التطبيق القديم صورةً ولا ينكسر.
     image = models.ImageField("الصورة", upload_to=media_path)
     thumb = models.ImageField("المصغّرة", upload_to=media_path, blank=True, null=True)
+    video = models.FileField("الفيديو", upload_to=media_path, blank=True, null=True)
+    duration = models.PositiveIntegerField("المدة (ثانية)", default=0)
+    video_state = models.CharField(
+        "حالة الفيديو", max_length=8, choices=VideoState.choices,
+        default=VideoState.NONE, blank=True, db_index=True,
+    )
     width = models.PositiveIntegerField(default=0)
     height = models.PositiveIntegerField(default=0)
     checksum = models.CharField(max_length=64, blank=True, db_index=True)
@@ -213,7 +226,8 @@ class ListingMedia(models.Model):
         ordering = ["sort_order", "id"]
 
     def __str__(self) -> str:
-        return f"صورة #{self.pk} — إعلان {self.listing_id}"
+        label = "فيديو" if self.kind == self.Kind.VIDEO else "صورة"
+        return f"{label} #{self.pk} — إعلان {self.listing_id}"
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

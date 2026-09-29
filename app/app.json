@@ -56,12 +56,19 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": false
+        }
       ]
     ],
     "extra": {
       "apiUrl": "https://souq.syrz1.com/api/v1"
     },
-    "runtimeVersion": "2",
+    "runtimeVersion": "3",
     "updates": {
       "enabled": true,
       "url": "https://souq.syrz1.com/api/v1/updates/manifest",

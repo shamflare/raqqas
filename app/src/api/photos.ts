@@ -1,7 +1,7 @@
 import { File, UploadType } from 'expo-file-system';
 
 import { ApiError, api, OfflineError } from './client';
-import { API_URL, UPLOAD_TIMEOUT_MS } from '../config';
+import { API_URL, UPLOAD_TIMEOUT_MS, VIDEO_UPLOAD_TIMEOUT_MS } from '../config';
 import type { Media } from './types';
 
 /** صورة اختارها المستخدم من جهازه ولم تُرفع بعد. */
@@ -27,18 +27,26 @@ export type UploadOutcome = {
  * هذه الدالة تسلّم مسار الملف للطبقة الأصلية مباشرة، فتقرأه وترفعه وتعيد
  * ردّ الخادم كما هو — بلا وسيط JavaScript يبني multipart.
  */
-async function send(listingId: number, photo: PickedPhoto, token: string | null) {
+type Target = { path: string; fieldName: string; timeoutMs: number };
+
+const PHOTO_TARGET = (listingId: number): Target => ({
+  path: `/listings/${listingId}/media`,
+  fieldName: 'images',
+  timeoutMs: UPLOAD_TIMEOUT_MS,
+});
+
+async function send(target: Target, file: PickedPhoto, token: string | null) {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), target.timeoutMs);
   try {
-    return await new File(photo.uri).upload(`${API_URL}/listings/${listingId}/media`, {
+    return await new File(file.uri).upload(`${API_URL}${target.path}`, {
       httpMethod: 'POST',
       uploadType: UploadType.MULTIPART,
-      fieldName: 'images',
-      mimeType: photo.type,
+      fieldName: target.fieldName,
+      mimeType: file.type,
       headers,
       signal: controller.signal,
     });
@@ -47,14 +55,18 @@ async function send(listingId: number, photo: PickedPhoto, token: string | null)
   }
 }
 
-async function uploadOne(listingId: number, photo: PickedPhoto): Promise<Media[]> {
-  let result = await send(listingId, photo, api.accessToken);
-
-  // انتهت صلاحية الرمز أثناء الرفع الطويل — نجدّده مرة ونعيد المحاولة بصمت
+/** يرسل ملفًا، ويجدّد الرمز مرة إن انتهت صلاحيته أثناء الرفع الطويل. */
+async function sendWithRenewal(target: Target, file: PickedPhoto) {
+  let result = await send(target, file, api.accessToken);
   if (result.status === 401) {
     const renewed = await api.renewAccessToken();
-    if (renewed) result = await send(listingId, photo, renewed);
+    if (renewed) result = await send(target, file, renewed);
   }
+  return result;
+}
+
+async function uploadOne(listingId: number, photo: PickedPhoto): Promise<Media[]> {
+  const result = await sendWithRenewal(PHOTO_TARGET(listingId), photo);
 
   if (result.status >= 400) {
     const error = safeJson(result.body)?.error;
@@ -118,6 +130,46 @@ export async function uploadPhotos(
   }
 
   return { uploaded, failed, message, detail };
+}
+
+/** فيديو اختاره المستخدم ولم يُرفع بعد. `duration` بالثواني. */
+export type PickedVideo = PickedPhoto & { duration: number; size: number | null };
+
+export type VideoOutcome =
+  | { ok: true; media: Media }
+  | { ok: false; message: string; detail?: string };
+
+/**
+ * رفع فيديو الإعلان — مقطع واحد، بالمسار الأصلي نفسه الذي ترفع به الصور.
+ *
+ * الخادم يفحصه ويستخرج غلافه ويعيده فورًا، ثم يضغطه لاحقًا. فالانتظار هنا هو
+ * زمن الرفع وحده — ولذلك مهلته أطول بكثير من مهلة الصورة.
+ */
+export async function uploadVideo(listingId: number, video: PickedVideo): Promise<VideoOutcome> {
+  try {
+    const result = await sendWithRenewal(
+      { path: `/listings/${listingId}/video`, fieldName: 'video', timeoutMs: VIDEO_UPLOAD_TIMEOUT_MS },
+      video,
+    );
+    const body = safeJson(result.body);
+    if (result.status >= 400) {
+      const error = body?.error;
+      return {
+        ok: false,
+        message: error?.fields?.video?.[0] ?? error?.message ?? 'تعذّر رفع الفيديو.',
+      };
+    }
+    return { ok: true, media: body as Media };
+  } catch (caught) {
+    if (caught instanceof OfflineError) {
+      return { ok: false, message: caught.message, detail: caught.detail };
+    }
+    return {
+      ok: false,
+      message: 'تعذّر رفع الفيديو. تحقّق من الإنترنت وأعد المحاولة.',
+      detail: (caught as Error)?.message,
+    };
+  }
 }
 
 /** حذف صورة من إعلان — نهائي وفوري. */

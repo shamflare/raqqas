@@ -12,16 +12,25 @@ from .models import Favorite, Listing, ListingMedia, RejectionReason, Report
 class MediaSerializer(serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
     thumb_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ListingMedia
-        fields = ["id", "kind", "url", "thumb_url", "width", "height", "is_main", "sort_order"]
+        # للفيديو: `url` صورة الغلاف و`video_url` المقطع نفسه. التطبيق القديم
+        # يقرأ `url` وحده فيعرض الغلاف صورةً — لا ينكسر على رابط mp4.
+        fields = [
+            "id", "kind", "url", "thumb_url", "video_url", "duration",
+            "width", "height", "is_main", "sort_order",
+        ]
 
     def get_url(self, obj) -> str | None:
         return self._absolute(obj.image)
 
     def get_thumb_url(self, obj) -> str | None:
         return self._absolute(obj.thumb) or self._absolute(obj.image)
+
+    def get_video_url(self, obj) -> str | None:
+        return self._absolute(obj.video) if obj.kind == ListingMedia.Kind.VIDEO else None
 
     def _absolute(self, field):
         if not field:

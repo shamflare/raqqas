@@ -22,6 +22,7 @@ import { OptionList, Sheet } from '../components/Sheet';
 import { SubHeader } from '../components/Header';
 import { useToast } from '../components/Toast';
 import { Avatar, Badge, Button, Card, Empty, IconButton, Loader, Notice, Txt } from '../components/ui';
+import { formatDuration, VideoPlayerModal } from '../components/Video';
 import { CAN_DOWNLOAD_APK, PLAY_STORE_URL } from '../config';
 import { useResource } from '../hooks/useResource';
 import { useI18n } from '../i18n';
@@ -51,6 +52,7 @@ export function ListingScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
 
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [playing, setPlaying] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState<string>('fraud');
   const [reportNote, setReportNote] = useState('');
@@ -218,14 +220,51 @@ export function ListingScreen({ navigation, route }: Props) {
                 onMomentumScrollEnd={(event) =>
                   setPhotoIndex(Math.round(event.nativeEvent.contentOffset.x / width))
                 }
-                renderItem={({ item }) => (
-                  <Image
-                    source={{ uri: item.url }}
-                    style={{ width, aspectRatio: 4 / 3 }}
-                    contentFit="cover"
-                    transition={150}
-                  />
-                )}
+                renderItem={({ item }) =>
+                  item.kind === 'video' && item.video_url ? (
+                    // الغلاف وحده حتى يطلب المشاهد التشغيل — لا تنزيل لفيديو لم يُطلب
+                    <Pressable onPress={() => setPlaying(item.video_url ?? null)}>
+                      <Image
+                        source={{ uri: item.url }}
+                        style={{ width, aspectRatio: 4 / 3 }}
+                        contentFit="cover"
+                        transition={150}
+                      />
+                      <View
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 68,
+                            height: 68,
+                            borderRadius: 34,
+                            backgroundColor: 'rgba(0,0,0,0.6)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Txt size={28} color="#FFFFFF">▶</Txt>
+                        </View>
+                        <Txt size={13} weight={800} color="#FFFFFF">
+                          {text.listing.playVideo} · {formatDuration(item.duration ?? 0)}
+                        </Txt>
+                      </View>
+                    </Pressable>
+                  ) : (
+                    <Image
+                      source={{ uri: item.url }}
+                      style={{ width, aspectRatio: 4 / 3 }}
+                      contentFit="cover"
+                      transition={150}
+                    />
+                  )
+                }
               />
               {listing.media.length > 1 ? (
                 <View
@@ -467,6 +506,8 @@ export function ListingScreen({ navigation, route }: Props) {
           </View>
         </View>
       ) : null}
+
+      <VideoPlayerModal url={playing} onClose={() => setPlaying(null)} />
 
       {/* الإبلاغ */}
       <Sheet

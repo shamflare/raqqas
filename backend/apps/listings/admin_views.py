@@ -5,6 +5,8 @@
 لذلك: صفّ سريع · موافقة جماعية · أسباب رفض جاهزة · مؤشّر زمن انتظار.
 """
 
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -15,7 +17,7 @@ from rest_framework.response import Response
 from apps.accounts.models import User
 from apps.core.models import AdminLog, AppConfig
 from apps.core.pagination import DefaultPagination
-from apps.core.permissions import IsStaffRole
+from apps.core.permissions import IsAdminRole, IsStaffRole
 from apps.notifications.services import notify_listing_published, notify_listing_rejected
 
 from .models import Listing, Report
@@ -366,3 +368,43 @@ def set_user_auto_publish(request, pk: int):
         note="تفعيل النشر التلقائي" if enabled else "إيقاف النشر التلقائي",
     )
     return Response({"ok": True, "auto_publish": user.auto_publish})
+
+
+@extend_schema(summary="تعيين كلمة مرور جديدة لمستخدم")
+@api_view(["POST"])
+@permission_classes([IsAdminRole])
+def set_user_password(request, pk: int):
+    """
+    للعميل الذي نسي كلمته وتواصل مع الإدارة — حين لا تسعفه الاستعادة عبر واتساب.
+
+    للمدير وحده لا للمشرف: من يملك تبديل كلمة أي حساب يملك الدخول إليه.
+    وحسابات المدراء خارج هذا الباب — يستعيدها صاحبها بنفسه.
+
+    يُخرج كل أجهزة المستخدم: إن كان أحد آخر يعرف الكلمة القديمة فقد خرج الآن.
+    """
+    user = User.objects.filter(pk=pk).first()
+    if not user:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+    if user.role == User.Role.ADMIN:
+        return Response(
+            {"error": {"code": "permission_denied", "message": "لا يمكن تعديل حساب مدير."}},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    password = str(request.data.get("new_password") or "").strip()
+    try:
+        validate_password(password, user)
+    except DjangoValidationError as exc:
+        return Response(
+            {"error": {
+                "code": "validation_error",
+                "message": exc.messages[0],
+                "fields": {"new_password": exc.messages},
+            }},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user.set_password_and_revoke_sessions(password)
+    # الكلمة نفسها لا تُسجَّل — السجلّ يقول من غيّرها ومتى فقط
+    AdminLog.record(request.user, "user_password", user)
+    return Response({"ok": True})

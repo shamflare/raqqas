@@ -5,7 +5,7 @@ import React, { useMemo, useState } from 'react';
 import { Platform, Pressable, View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
-import { uploadPhotos, type PickedPhoto } from '../api/photos';
+import { uploadPhotos, uploadVideo, type PickedPhoto, type PickedVideo } from '../api/photos';
 import type { Category, City, Listing } from '../api/types';
 import { ChoiceGroup, Field, Input, SelectButton, TextArea } from '../components/Field';
 import { KeyboardScroll } from '../components/KeyboardScroll';
@@ -13,6 +13,7 @@ import { SubHeader } from '../components/Header';
 import { OptionList, Sheet } from '../components/Sheet';
 import { useToast } from '../components/Toast';
 import { Button, Notice, Txt } from '../components/ui';
+import { usePickVideo, VideoTile } from '../components/Video';
 import { useResource } from '../hooks/useResource';
 import { useI18n } from '../i18n';
 import type { RootStackParamList } from '../navigation/types';
@@ -22,13 +23,15 @@ import { useTheme } from '../theme/ThemeProvider';
 type Props = NativeStackScreenProps<RootStackParamList, 'Add'>;
 type Picked = PickedPhoto;
 
-/** ما بعد الضغط على «نشر»: الإعلان وصل، وحال الصور هي ما يحدّد الشاشة التالية. */
+/** ما بعد الضغط على «نشر»: الإعلان وصل، وحال الصور والفيديو هي ما يحدّد الشاشة التالية. */
 type Outcome = {
   listingId: number;
   failed: number;
   total: number;
   message?: string;
   detail?: string;
+  /** الفيديو لم يصل — يُعاد وحده، فالإعلان وصوره محفوظة. */
+  videoFailed?: boolean;
 };
 
 export function AddListingScreen({ navigation }: Props) {
@@ -41,6 +44,7 @@ export function AddListingScreen({ navigation }: Props) {
   const { data: cities } = useResource<City[]>('/cities', { cacheKey: 'cities' });
 
   const [photos, setPhotos] = useState<Picked[]>([]);
+  const [video, setVideo] = useState<PickedVideo | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -55,6 +59,7 @@ export function AddListingScreen({ navigation }: Props) {
   const [sheet, setSheet] = useState<'parent' | 'child' | 'city' | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
@@ -62,6 +67,8 @@ export function AddListingScreen({ navigation }: Props) {
   const child = parent?.children?.find((c) => c.id === categoryId) ?? null;
   const city = useMemo(() => cities?.find((c) => c.id === cityId) ?? null, [cities, cityId]);
   const maxPhotos = config.limits.max_photos_per_listing;
+  const maxVideoSeconds = config.limits.max_video_seconds;
+  const pickVideo = usePickVideo();
 
   /* ---------------------------------------------------------------- الصور */
 
@@ -100,21 +107,42 @@ export function AddListingScreen({ navigation }: Props) {
     categoryId !== null &&
     cityId !== null;
 
-  /** رفع الصور على إعلان أُنشئ فعلًا — تُستدعى عند النشر وعند إعادة المحاولة. */
-  const sendPhotos = async (listingId: number, queue: Picked[]) => {
-    setProgress({ done: 0, total: queue.length });
-    const result = await uploadPhotos(listingId, queue, (done, total) =>
-      setProgress({ done, total }),
-    );
-    setProgress(null);
-    setPhotos(result.failed);
-    setOutcome({
-      listingId,
-      failed: result.failed.length,
-      total: queue.length,
-      message: result.message,
-      detail: result.detail,
-    });
+  /**
+   * رفع الصور ثم الفيديو على إعلان أُنشئ فعلًا — عند النشر وعند إعادة المحاولة.
+   *
+   * الصور أولًا: هي ما يُعرض في كل مكان، والفيديو إضافة. فإن انقطع الإنترنت
+   * أثناء رفع الفيديو الطويل يبقى الإعلان كاملًا بصوره.
+   */
+  const sendMedia = async (listingId: number, queue: Picked[], clip: PickedVideo | null) => {
+    let failed: Picked[] = [];
+    let message: string | undefined;
+    let detail: string | undefined;
+
+    if (queue.length) {
+      setProgress({ done: 0, total: queue.length });
+      const result = await uploadPhotos(listingId, queue, (done, total) =>
+        setProgress({ done, total }),
+      );
+      setProgress(null);
+      ({ failed, message, detail } = result);
+    }
+    setPhotos(failed);
+
+    let videoFailed = false;
+    if (clip) {
+      setUploadingVideo(true);
+      const result = await uploadVideo(listingId, clip);
+      setUploadingVideo(false);
+      if (result.ok) {
+        setVideo(null);
+      } else {
+        videoFailed = true;
+        message = message ?? result.message;
+        detail = detail ?? result.detail;
+      }
+    }
+
+    setOutcome({ listingId, failed: failed.length, total: queue.length, message, detail, videoFailed });
   };
 
   const submit = async () => {
@@ -137,7 +165,7 @@ export function AddListingScreen({ navigation }: Props) {
         address: address.trim(),
       });
 
-      await sendPhotos(listing.id, photos);
+      await sendMedia(listing.id, photos, video);
     } catch (caught) {
       if (caught instanceof ApiError) setError(caught);
       else toast.show(text.errors.generic);
@@ -150,7 +178,7 @@ export function AddListingScreen({ navigation }: Props) {
     if (!outcome) return;
     setBusy(true);
     try {
-      await sendPhotos(outcome.listingId, photos);
+      await sendMedia(outcome.listingId, photos, video);
     } finally {
       setBusy(false);
     }
@@ -172,17 +200,24 @@ export function AddListingScreen({ navigation }: Props) {
    */
   if (outcome) {
     const allFailed = outcome.failed === outcome.total;
+    const anyFailed = outcome.failed > 0 || !!outcome.videoFailed;
     return (
       <View style={{ flex: 1, backgroundColor: t.colors.bg }}>
         <SubHeader title={text.add.title} onBack={goToMyListings} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10 }}>
-          <Txt size={64}>{outcome.failed === 0 ? '🎉' : '⚠️'}</Txt>
+          <Txt size={64}>{anyFailed ? '⚠️' : '🎉'}</Txt>
           <Txt size={20} weight={900} align="center">
-            {outcome.failed === 0 ? text.add.successTitle : text.add.photosFailedTitle}
+            {outcome.failed > 0
+              ? text.add.photosFailedTitle
+              : outcome.videoFailed
+                ? text.add.videoFailedTitle
+                : text.add.successTitle}
           </Txt>
           <Txt size={14} muted align="center" style={{ lineHeight: t.fs(24), marginBottom: 12 }}>
             {outcome.failed === 0
-              ? text.add.successText
+              ? outcome.videoFailed
+                ? text.add.videoFailedText
+                : text.add.successText
               : allFailed
                 ? tp(text.add.photosFailedText, { count: outcome.failed })
                 : tp(text.add.photosPartialText, {
@@ -191,7 +226,7 @@ export function AddListingScreen({ navigation }: Props) {
                   })}
           </Txt>
 
-          {outcome.failed > 0 ? (
+          {anyFailed ? (
             <View style={{ alignSelf: 'stretch', gap: 10, marginBottom: 4 }}>
               {outcome.message ? <Notice tone="danger">{outcome.message}</Notice> : null}
               {outcome.detail ? (
@@ -200,7 +235,7 @@ export function AddListingScreen({ navigation }: Props) {
                 </Txt>
               ) : null}
               <Button
-                title={text.add.retryPhotos}
+                title={outcome.failed > 0 ? text.add.retryPhotos : text.add.retryVideo}
                 icon="↻"
                 block
                 loading={busy}
@@ -210,8 +245,8 @@ export function AddListingScreen({ navigation }: Props) {
           ) : null}
 
           <Button
-            title={outcome.failed > 0 ? text.add.skipPhotos : text.add.successCta}
-            variant={outcome.failed > 0 ? 'ghost' : 'primary'}
+            title={anyFailed ? text.add.skipPhotos : text.add.successCta}
+            variant={anyFailed ? 'ghost' : 'primary'}
             onPress={goToMyListings}
           />
         </View>
@@ -316,6 +351,22 @@ export function AddListingScreen({ navigation }: Props) {
             ) : null}
           </View>
         </Field>
+
+        {maxVideoSeconds > 0 ? (
+          <Field
+            label={`🎬 ${text.add.video}`}
+            hint={tp(text.add.videoHint, { seconds: maxVideoSeconds })}
+          >
+            <VideoTile
+              picked={video}
+              onAdd={async () => {
+                const clip = await pickVideo();
+                if (clip) setVideo(clip);
+              }}
+              onRemove={() => setVideo(null)}
+            />
+          </Field>
+        ) : null}
 
         <Field
           label={text.add.listingTitle}
@@ -436,7 +487,9 @@ export function AddListingScreen({ navigation }: Props) {
           title={
             progress
               ? tp(text.add.uploadingPhotos, { done: progress.done, total: progress.total })
-              : busy
+              : uploadingVideo
+                ? text.add.uploadingVideo
+                : busy
                 ? text.add.submitting
                 : text.add.submit
           }

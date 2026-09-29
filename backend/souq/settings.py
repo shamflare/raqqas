@@ -144,6 +144,9 @@ IMAGE_QUALITY = 82
 DATA_UPLOAD_MAX_MEMORY_SIZE = IMAGE_MAX_UPLOAD_BYTES
 FILE_UPLOAD_MAX_MEMORY_SIZE = IMAGE_MAX_UPLOAD_BYTES
 
+# مسار ffmpeg لضغط الفيديو. فارغ = ffmpeg النظام إن وُجد، وإلا نسخة imageio-ffmpeg
+FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "")
+
 # ---------------------------------------------------------------- DRF
 
 REST_FRAMEWORK = {
