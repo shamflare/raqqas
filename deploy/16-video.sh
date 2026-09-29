@@ -100,13 +100,17 @@ ProtectHome=true
 ReadWritePaths=$APP_DIR/media
 SERVICE
 
-# OnUnitInactiveSec يُحسب من انتهاء الدورة السابقة — فلا تتداخل دورتان أبدًا
+# OnUnitInactiveSec يُحسب من انتهاء الدورة السابقة — فلا تتداخل دورتان أبدًا.
+# ⚠️ لكنه وحده لا يبدأ السلسلة: خدمة لم تعمل قطّ لا «انتهاء» لها يُحسب منه،
+#    وOnBootSec فات منذ إقلاع الخادم — فيبقى المؤقّت بلا موعد قادم إلى الأبد.
+#    OnActiveSec يطلق الدورة الأولى بعد تفعيل المؤقّت، ثم تتسلسل البقية.
 cat > /etc/systemd/system/souq-video.timer <<'TIMER'
 [Unit]
 Description=سوق الرقة — تشغيل ضغط الفيديو كل نصف دقيقة
 
 [Timer]
 OnBootSec=1min
+OnActiveSec=10s
 OnUnitInactiveSec=30s
 AccuracySec=5s
 

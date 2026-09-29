@@ -19,7 +19,8 @@
  */
 
 import { createServer } from 'node:http';
-import { rm } from 'node:fs/promises';
+import { readdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import makeWASocket, {
@@ -170,7 +171,13 @@ async function resetSession() {
   sock = null;
   ready = false;
   qrImage = null;
-  await rm(SESSION_DIR, { recursive: true, force: true });
+  // نمحو **محتوى** المجلد لا المجلد نفسه: systemd يربطه وحده قابلًا للكتابة
+  // داخل /etc المقفلة (ReadWritePaths)، فحذفه يرمي EROFS ويُسقط الخدمة —
+  // وهكذا بقيت تسقط وتقوم آلاف المرات بلا QR بعد أول فكّ ربط.
+  const entries = await readdir(SESSION_DIR).catch(() => []);
+  await Promise.all(
+    entries.map((name) => rm(join(SESSION_DIR, name), { recursive: true, force: true })),
+  );
   await sleep(1000);
   return connect();
 }
