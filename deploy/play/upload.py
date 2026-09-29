@@ -138,7 +138,10 @@ def show_status(service, package: str) -> None:
     service.edits().delete(editId=edit_id, packageName=package).execute()
 
 
-def upload(service, package: str, aab: Path, track: str, notes: str, rollout: float | None) -> None:
+def upload(
+    service, package: str, aab: Path | None, track: str, notes: str, rollout: float | None,
+    existing_code: int | None = None,
+) -> None:
     from googleapiclient.errors import HttpError  # type: ignore
 
     print(f"▶ فتح مسودّة تعديل…")
@@ -149,15 +152,21 @@ def upload(service, package: str, aab: Path, track: str, notes: str, rollout: fl
         return
 
     try:
-        print(f"▶ رفع الحزمة ({round(aab.stat().st_size / 1048576, 1)} ميغابايت)…")
-        bundle = (
-            service.edits()
-            .bundles()
-            .upload(editId=edit_id, packageName=package, media_body=str(aab), media_mime_type="application/octet-stream")
-            .execute()
-        )
-        version_code = bundle["versionCode"]
-        print(f"   ✓ رُفعت — versionCode {version_code}")
+        if existing_code is not None:
+            # ترقية: الحزمة مرفوعة من قبل (إلى internal مثلًا). رفعها ثانية يُرفض
+            # لأن versionCode مستعمَل — فنعيّن الرقم نفسه للمسار الجديد فقط.
+            version_code = existing_code
+            print(f"▶ ترقية versionCode {version_code} المرفوع سابقًا — بلا رفع جديد")
+        else:
+            print(f"▶ رفع الحزمة ({round(aab.stat().st_size / 1048576, 1)} ميغابايت)…")
+            bundle = (
+                service.edits()
+                .bundles()
+                .upload(editId=edit_id, packageName=package, media_body=str(aab), media_mime_type="application/octet-stream")
+                .execute()
+            )
+            version_code = bundle["versionCode"]
+            print(f"   ✓ رُفعت — versionCode {version_code}")
 
         release: dict = {
             "versionCodes": [str(version_code)],
@@ -222,12 +231,24 @@ def main() -> None:
         help="طرح تدريجي: 0.1 = عُشر المستخدمين. بلا هذا يصل الجميع دفعة واحدة.",
     )
     parser.add_argument("--status", action="store_true", help="اعرض ما هو منشور ولا ترفع شيئًا")
+    parser.add_argument(
+        "--version-code",
+        type=int,
+        default=None,
+        help="ترقية حزمة مرفوعة سابقًا إلى هذا المسار بلا رفع جديد (مثلًا من internal إلى production)",
+    )
     args = parser.parse_args()
 
     service = build_service(args.credentials)
 
     if args.status:
         show_status(service, args.package)
+        return
+
+    if args.version_code is not None:
+        if args.rollout is not None and not (0 < args.rollout <= 1):
+            fail("قيمة --rollout يجب أن تكون بين 0 و 1 (مثلًا 0.1 لعُشر المستخدمين).")
+        upload(service, args.package, None, args.track, args.notes, args.rollout, args.version_code)
         return
 
     aab = Path(args.aab).resolve()

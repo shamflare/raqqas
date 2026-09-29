@@ -5,6 +5,7 @@
 #   bash 13-play-upload.sh --track internal --notes "إصلاح لوحة المفاتيح"
 #   bash 13-play-upload.sh --track production --notes "..." --rollout 0.1
 #   bash 13-play-upload.sh --status        # ما هو منشور الآن، بلا رفع
+#   bash 13-play-upload.sh --track production --version-code 7 --notes "..."   # ترقية مرفوع سابقًا
 #
 # غلاف رقيق حول deploy/play/upload.py: يتحقّق من الشروط أولًا بلغة مفهومة،
 # ثم يسلّم العمل لبايثون. الفحص هنا لأن رسالة «الملف غير موجود» أوضح بكثير
