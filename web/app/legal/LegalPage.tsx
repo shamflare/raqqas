@@ -4,7 +4,7 @@ import Link from 'next/link';
 import React, { createContext, useContext, useState } from 'react';
 
 import styles from './legal.module.css';
-import { LANGS, type Doc, type Lang } from './content';
+import { IDENTITY, LANGS, type Doc, type Lang } from './content';
 
 /**
  * عارض الوثائق القانونية — بمبدّل لغة.
@@ -45,8 +45,9 @@ export function LegalPage({
     <div className={styles.page} dir={dir} lang={lang}>
       <div className={styles.bar}>
         <div className={styles.barInner}>
+          {/* الاسم كما في متجر Google Play — المراجع يطابقه بصفحة التطبيق (content.ts → IDENTITY) */}
           <Link href="/" className={styles.home}>
-            سوق الرقة
+            {IDENTITY.appName}
           </Link>
           <div className={styles.langs}>
             {LANGS.map((option) => (

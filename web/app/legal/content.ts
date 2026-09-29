@@ -31,11 +31,25 @@ export const LANGS: { code: Lang; label: string; dir: 'rtl' | 'ltr' }[] = [
   { code: 'en', label: 'English', dir: 'ltr' },
 ];
 
+/**
+ * هويّة التطبيق كما تظهر في صفحة Google Play — **حرفيًا**.
+ *
+ * ⚠️ غوغل رفض تحديثًا في 2026-09-29 لأن السياسة لم تذكر اسم التطبيق في المتجر
+ * («سوقنا») ولا اسم المطوّر. المراجع يطابق النصّ بالنصّ: إن غُيّر اسم التطبيق
+ * في Store listing أو اسم المطوّر في الكونسول، يُغيَّر هنا في اليوم نفسه.
+ */
+export const IDENTITY = {
+  appName: 'سوقنا',
+  appNameLatin: 'Souqna',
+  developer: 'lebid hacalaye',
+  packageName: 'com.souqraqqa.app',
+};
+
 /** تاريخ آخر مراجعة — يُحدَّث يدويًا مع كل تعديل جوهري. */
 export const UPDATED = {
-  ar: 'آخر تحديث: 19 آب 2026',
-  tr: 'Son guncelleme: 19 Agustos 2026',
-  en: 'Last updated: 19 August 2026',
+  ar: 'آخر تحديث: 29 أيلول 2026',
+  tr: 'Son guncelleme: 29 Eylul 2026',
+  en: 'Last updated: 29 September 2026',
 };
 
 /* ══════════════════════════════════════════════════ سياسة الخصوصية */
@@ -45,9 +59,21 @@ export const PRIVACY: Record<Lang, Doc> = {
     title: 'سياسة الخصوصية',
     updated: UPDATED.ar,
     lead:
-      'سوق الرقة تطبيق إعلانات مبوّبة مجاني بالكامل. لا نبيع بياناتك ولا نشاركها مع ' +
+      `${IDENTITY.appName} (سوق الرقة) تطبيق إعلانات مبوّبة مجاني بالكامل. لا نبيع بياناتك ولا نشاركها مع ` +
       'أي مُعلن أو وسيط، ولا يوجد في التطبيق أي إعلانات طرف ثالث ولا أدوات تتبّع.',
     sections: [
+      {
+        h: 'من نحن',
+        p: [
+          'تنطبق هذه السياسة على التطبيق التالي كما هو منشور في متجر Google Play:',
+        ],
+        list: [
+          `اسم التطبيق: ${IDENTITY.appName} (${IDENTITY.appNameLatin})`,
+          `المطوّر: ${IDENTITY.developer}`,
+          `معرّف الحزمة: ${IDENTITY.packageName}`,
+          `المسؤول عن بياناتك (Data controller) هو المطوّر ${IDENTITY.developer}.`,
+        ],
+      },
       {
         h: 'ما الذي نجمعه',
         p: ['نجمع ما يلزم لتشغيل السوق فقط:'],
@@ -141,9 +167,19 @@ export const PRIVACY: Record<Lang, Doc> = {
     title: 'Gizlilik Politikasi',
     updated: UPDATED.tr,
     lead:
-      'Rakka Carsisi tamamen ucretsiz bir seri ilan uygulamasidir. Verilerinizi satmiyor, ' +
+      `${IDENTITY.appNameLatin} (Rakka Carsisi) tamamen ucretsiz bir seri ilan uygulamasidir. Verilerinizi satmiyor, ` +
       'hicbir reklamverenle paylasmiyoruz. Uygulamada ucuncu taraf reklam veya izleme araci yoktur.',
     sections: [
+      {
+        h: 'Biz kimiz',
+        p: ['Bu politika, Google Play magazasinda yayinlanan su uygulama icin gecerlidir:'],
+        list: [
+          `Uygulama adi: ${IDENTITY.appName} (${IDENTITY.appNameLatin})`,
+          `Gelistirici: ${IDENTITY.developer}`,
+          `Paket adi: ${IDENTITY.packageName}`,
+          `Verilerinizden sorumlu taraf (veri sorumlusu) gelistirici ${IDENTITY.developer}'dir.`,
+        ],
+      },
       {
         h: 'Topladiklarimiz',
         p: ['Yalnizca pazarin calismasi icin gerekli olanlar:'],
@@ -237,9 +273,19 @@ export const PRIVACY: Record<Lang, Doc> = {
     title: 'Privacy Policy',
     updated: UPDATED.en,
     lead:
-      'Souq Raqqa is a completely free classified-ads app. We do not sell your data or ' +
+      `${IDENTITY.appName} (${IDENTITY.appNameLatin}, also known as Souq Raqqa) is a completely free classified-ads app. We do not sell your data or ` +
       'share it with any advertiser. The app contains no third-party ads and no tracking tools.',
     sections: [
+      {
+        h: 'Who we are',
+        p: ['This policy applies to the following app, as published on Google Play:'],
+        list: [
+          `App name: ${IDENTITY.appName} (${IDENTITY.appNameLatin})`,
+          `Developer: ${IDENTITY.developer}`,
+          `Package name: ${IDENTITY.packageName}`,
+          `The data controller responsible for your data is the developer, ${IDENTITY.developer}.`,
+        ],
+      },
       {
         h: 'What we collect',
         p: ['Only what the marketplace needs to work:'],
